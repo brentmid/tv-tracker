@@ -68,6 +68,18 @@ def post(url, body=None):
 # Pages
 # ---------------------------------------------------------------------------
 
+def test_queue_sort_select_box(srv):
+    base, _, _ = srv
+    page = get_html(base + "/")
+    assert '<option value="recent" selected>Recently watched</option>' in page
+    page = get_html(base + "/?sort=name")
+    assert '<option value="name" selected>A–Z</option>' in page
+    assert '<option value="recent">Recently watched</option>' in page
+    # unknown sort falls back to the default, no error
+    page = get_html(base + "/?sort=bogus")
+    assert '<option value="recent" selected>' in page
+
+
 def test_queue_page_shows_next_episode_and_waiting_section(srv):
     base, _, ids = srv
     page = get_html(base + "/")

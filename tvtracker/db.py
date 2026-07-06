@@ -302,25 +302,37 @@ def watch_all(conn: sqlite3.Connection, show_id: int) -> int:
 # Watch Next queue
 # ---------------------------------------------------------------------------
 
+# Queue sort options (whitelist — the key comes straight from the URL).
+# "recent" is TV Time's default: the show you watched most recently that
+# still has unwatched aired episodes floats to the top; never-watched
+# shows sink to the bottom alphabetically.
+QUEUE_SORTS = {
+    "recent": "last_watched_at IS NULL, last_watched_at DESC, s.name COLLATE NOCASE",
+    "oldest": "e.airdate, s.name COLLATE NOCASE",
+    "newest": "e.airdate DESC, s.name COLLATE NOCASE",
+    "name": "s.name COLLATE NOCASE",
+}
+
+
 def watch_next(
-    conn: sqlite3.Connection, as_of: str | None = None
+    conn: sqlite3.Connection, as_of: str | None = None, sort: str = "recent"
 ) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
     """The home-page queue.
 
     Returns (queue, waiting):
     - queue: one row per active show that has an unwatched episode already
       aired (airdate <= as_of): the earliest such episode by (season, number),
-      plus show columns and the show's unwatched-aired count. Sorted oldest
-      airdate first, so the queue surfaces what's been waiting longest; ties
-      by show name.
+      plus show columns, the show's unwatched-aired count, and its
+      last_watched_at. Ordered per QUEUE_SORTS[sort].
     - waiting: active shows whose unwatched episodes are all unaired (or have
       no airdate), with the next upcoming airdate when known — soonest first.
 
     `as_of` defaults to today (local); injectable for tests.
     """
     as_of = as_of or today()
+    order_by = QUEUE_SORTS.get(sort) or QUEUE_SORTS["recent"]
     queue = conn.execute(
-        """
+        f"""
         SELECT s.*,
                e.id      AS episode_id,
                e.season  AS episode_season,
@@ -331,7 +343,9 @@ def watch_next(
                  WHERE e2.show_id = s.id
                    AND e2.watched_at IS NULL
                    AND e2.airdate IS NOT NULL
-                   AND e2.airdate <= :as_of) AS unwatched_aired_count
+                   AND e2.airdate <= :as_of) AS unwatched_aired_count,
+               (SELECT MAX(e4.watched_at) FROM episodes e4
+                 WHERE e4.show_id = s.id) AS last_watched_at
         FROM shows s
         JOIN episodes e ON e.id = (
             SELECT e3.id FROM episodes e3
@@ -343,7 +357,7 @@ def watch_next(
             LIMIT 1
         )
         WHERE s.status = 'active'
-        ORDER BY e.airdate, s.name COLLATE NOCASE
+        ORDER BY {order_by}
         """,
         {"as_of": as_of},
     ).fetchall()

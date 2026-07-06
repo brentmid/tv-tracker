@@ -218,18 +218,35 @@ def make_handler(
 
         # -- routes ----------------------------------------------------------
 
+        QUEUE_SORT_LABELS = [
+            ("recent", "Recently watched"),
+            ("oldest", "Waiting longest"),
+            ("newest", "Newest episodes"),
+            ("name", "A–Z"),
+        ]
+
         def page_queue(self):
             conn = self.conn()
-            queue, waiting = db.watch_next(conn)
+            sort = (self.query.get("sort") or ["recent"])[0]
+            if sort not in db.QUEUE_SORTS:
+                sort = "recent"
+            queue, waiting = db.watch_next(conn, sort=sort)
             last_refresh = db.get_meta(conn, "last_refresh_all")
             last_txt = (f"air dates refreshed {html.escape(last_refresh[:16])}Z"
                         if last_refresh else "air dates never refreshed")
+            options = "".join(
+                f'<option value="{value}"{" selected" if value == sort else ""}>'
+                f"{label}</option>"
+                for value, label in self.QUEUE_SORT_LABELS)
             parts = [f"""\
 <h1>Watch Next</h1>
 <p class="muted">{last_txt} ·
   <button onclick="refreshBtn('/api/refresh-all', this)">Refresh all</button></p>
-<p><input type="search" placeholder="Filter shows…"
-   oninput="filterCards(this.value)"></p>"""]
+<p style="display:flex;gap:8px">
+  <select onchange="location.href='/?sort='+this.value">{options}</select>
+  <input type="search" placeholder="Filter shows…"
+   oninput="filterCards(this.value)" style="flex:1">
+</p>"""]
             if not queue and not waiting:
                 parts.append(
                     '<p class="muted">Nothing here yet — '

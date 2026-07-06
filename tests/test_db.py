@@ -153,13 +153,42 @@ def test_queue_picks_earliest_unwatched_aired_episode(conn):
     assert row["unwatched_aired_count"] == 2
 
 
-def test_queue_ordering_oldest_pending_airdate_first(conn):
+def test_queue_sort_oldest_pending_airdate_first(conn):
     s1 = add_show(conn, 1, "Newer Backlog")
     add_ep(conn, s1, 100, 1, 1, airdate="2026-06-01")
     s2 = add_show(conn, 2, "Older Backlog")
     add_ep(conn, s2, 200, 1, 1, airdate="2024-01-01")
-    queue, _ = db.watch_next(conn, as_of=TODAY)
+    queue, _ = db.watch_next(conn, as_of=TODAY, sort="oldest")
     assert [r["name"] for r in queue] == ["Older Backlog", "Newer Backlog"]
+    queue, _ = db.watch_next(conn, as_of=TODAY, sort="newest")
+    assert [r["name"] for r in queue] == ["Newer Backlog", "Older Backlog"]
+
+
+def test_queue_default_sort_recently_watched_first(conn):
+    # TV Time's default: the show most recently watched (that still has
+    # unwatched aired episodes) first; never-watched shows last, A-Z.
+    a = add_show(conn, 1, "Watched Yesterday")
+    add_ep(conn, a, 100, 1, 1, airdate="2026-01-01",
+           watched_at="2026-07-05T20:00:00+00:00")
+    add_ep(conn, a, 101, 1, 2, airdate="2026-01-08")
+    b = add_show(conn, 2, "Watched Last Year")
+    add_ep(conn, b, 200, 1, 1, airdate="2025-01-01",
+           watched_at="2025-06-01T20:00:00+00:00")
+    add_ep(conn, b, 201, 1, 2, airdate="2025-01-08")
+    c = add_show(conn, 3, "Never Started")
+    add_ep(conn, c, 300, 1, 1, airdate="2020-01-01")
+    queue, _ = db.watch_next(conn, as_of=TODAY)  # default sort
+    assert [r["name"] for r in queue] == \
+        ["Watched Yesterday", "Watched Last Year", "Never Started"]
+    assert queue[0]["last_watched_at"] == "2026-07-05T20:00:00+00:00"
+    assert queue[2]["last_watched_at"] is None
+
+
+def test_queue_unknown_sort_falls_back_to_recent(conn):
+    a = add_show(conn, 1, "Show")
+    add_ep(conn, a, 100, 1, 1, airdate="2020-01-01")
+    queue, _ = db.watch_next(conn, as_of=TODAY, sort="drop table shows")
+    assert len(queue) == 1  # silently falls back, never interpolates input
 
 
 def test_queue_excludes_unaired_and_undated_episodes(conn):
