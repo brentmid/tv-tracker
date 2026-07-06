@@ -5,14 +5,14 @@ Living checklist. **Update after every work chunk** — this file (plus `docs/pl
 ## Milestones
 
 - [x] Plan approved (2026-07-06) — full plan in `docs/plan.md`
-- [x] **M0 Repo bootstrap** — done EXCEPT the first commit
+- [x] **M0 Repo bootstrap** — COMPLETE (first commit `397da02`, GPG-signed)
   - [x] `gdpr-data.zip` moved to `baselines/import/` (was rsync-exposed at ~/bin root; dry-run verified excluded in new location; scratchpad extraction deleted)
   - [x] Directory skeleton created
   - [x] docs/{plan,original-prompt,progress}.md written
   - [x] .gitignore, pre-commit hook (executable), CLAUDE.md, README, requirements.txt
   - [x] git init (branch main) + hook symlinked to `.git/hooks/pre-commit` + rejection test passed (fake.env blocked, then unstaged/removed)
-  - [ ] **FIRST COMMIT DEFERRED** — Brent can't unlock 1Password from the plane, so GPG signing is unavailable. Working tree is clean and correct; everything above is untracked but ready. **When Brent says commit: stage .gitignore, CLAUDE.md, README.md, requirements.txt, docs/, scripts/ and make the GPG-signed first commit.** Do NOT use --no-gpg-sign.
-- [ ] M1 venv + DB layer (`tvtracker/db.py`, `tests/test_db.py`)
+  - [x] First commit made 2026-07-06 (was deferred for 1Password; Brent unlocked it). Hook's GDPR-filename rule was scoped to `tests/` diffs only — docs and the hook itself legitimately name those files; rejection re-tested after narrowing.
+- [x] **M1 venv + DB layer** — `.venv` (Python 3.14.6), `tvtracker/db.py` (full schema v1 + all queries: shows/episodes upserts, watch/unwatch/season/all, watch_next queue+waiting, movies, import_staging, meta), `tests/{conftest,test_db}.py` — 23 tests green offline. `network` pytest marker registered (hook excludes it).
 - [ ] M2 Server skeleton (`server/server.py`, `/healthz`, assets, `tests/test_server.py`)
 - [ ] M3 Core TV UI (queue, show detail, checkoff, archive, `scripts/dev-seed.py`)
 - [ ] M4 API clients + add-show (`tvtracker/tvmaze.py`, `tvtracker/tmdb.py`, `/add`)
@@ -37,4 +37,5 @@ Living checklist. **Update after every work chunk** — this file (plus `docs/pl
 
 ## Session log
 
+- **2026-07-06 (session 2)**: 1Password unlocked → made the deferred M0 first commit (`397da02`; hook false-positive on docs naming GDPR filenames fixed by scoping that rule to `tests/`). Built M1: venv + `tvtracker/db.py` + 23-test suite, all green. Key db.py semantics: upserts preserve watch state (`watched_at`, show `status`, movie `status/watched_at`) while refreshing metadata; `watch_next()` returns `(queue, waiting)` with injectable `as_of`; next-up episode chosen by (season, number) order among aired unwatched, queue sorted oldest pending airdate first. Next: M2 server skeleton.
 - **2026-07-06 (session 1)**: Researched TV Time shutdown (2026-07-15) + APIs; explored portfolio-agent conventions; plan approved. Export zip arrived mid-flight via AirDrop→laptop; inspected real format (52 CSVs) and confirmed TVDB ids — importer is ID-based, not fuzzy. Moved zip into `baselines/import/`. Started M0.
