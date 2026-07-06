@@ -1,0 +1,37 @@
+# --- Credentials & secrets (never commit) ---
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*credentials*.json
+*secret*.json
+*token*.json
+tmdb_api_key
+
+# --- Runtime data (real watch history + the TV Time GDPR export live here) ---
+baselines/
+*.db
+*.db-wal
+*.db-shm
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- macOS ---
+.DS_Store
+
+# --- Tooling ---
+.claude/
+.idea/
+.vscode/
