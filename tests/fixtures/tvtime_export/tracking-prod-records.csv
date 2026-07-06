@@ -1,0 +1,7 @@
+series_id,user_id,type,updated_at,created_at,series_name,watch_count,uuid,type-uuid-n,watches,release_date_range_key,entity_type,follow_date_range_key,movie_name,release_date,alpha_range_key,runtime,rewatch_count,episode_id,series_uuid,watch_date,episode_number,season_number,total_movies_runtime,total_series_runtime,country,watch_date_range_key,unitarian,watched_episode_range_key,bulk_type
+,,watch,,2022-03-03 20:00:00,,,,,,,movie,,Inception,2010-07-15 00:00:00,,8880,,,,,,,,,,,,,
+,,follow,,2022-01-01 00:00:00,,,,,,,movie,,Inception,2010-07-15 00:00:00,,8880,,,,,,,,,,,,,
+,,follow,,2022-04-21 02:10:20,,,,,,,movie,,The Lobster,2015-10-28 00:00:00,,7080,,,,,,,,,,,,,
+,,towatch,,2023-01-01 00:00:00,,,,,,,movie,,Mystery Flick,0001-01-01 00:00:00,,,,,,,,,,,,,,,
+,,watch,,2019-01-01 10:00:00,Game of Thrones,,,,,,episode,,,,,,,,,,1,1,,,,,,,
+,,rewatch_count,,2022-03-04 00:00:00,,,,,,,movie,,Inception,,,,,,,,,,,,,,,,

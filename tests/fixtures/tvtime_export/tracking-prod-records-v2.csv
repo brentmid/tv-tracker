@@ -1,0 +1,10 @@
+ep_id,series_name,ep_no,s_no,user_id,episode_id,created_at,key,gsi,season_number,s_id,runtime,episode_number,ep_watch_count,updated_at,movie_watch_count,total_movies_runtime,series_follow_count,total_series_runtime,is_followed,uuid,followed_at,is_for_later,is_archived,most_recent_ep_watched,is_unitary,rewatch_count,is_special,bulk_type
+3254641,Game of Thrones,1,1,,3254641,2019-01-01 10:00:00,watch-episode-121361-1-1,,1,121361,,1,,,,,,,,,,,,,,0,,
+3254641,Game of Thrones,1,1,,3254641,2021-05-05 12:00:00,watch-episode-121361-1-1,,1,121361,,1,,,,,,,,,,,,,,1,,
+3436411,Game of Thrones,2,1,,3436411,2019-01-02 10:00:00,watch-episode-121361-1-2,,1,121361,,2,,,,,,,,,,,,,,0,,
+9999999,Game of Thrones,9,9,,9999999,2019-01-03 10:00:00,watch-episode-121361-9-9,,9,121361,,9,,,,,,,,,,,,,,0,,
+,Old Gone Show,1,1,,,2018-06-01 09:00:00,watch-episode-555-1-1,,1,555,,1,,,,,,,,,,,,,,0,,
+,Twin Detectives,1,1,,,2020-02-02 20:00:00,watch-episode-666-1-1,,1,666,,1,,,,,,,,,,,,,,0,,
+,Broken Row,,,,,2020-01-01 00:00:00,watch-episode-777-x,,,777,,,,,,,,,,,,,,,,,,
+,Game of Thrones,,,,,,user-series-121361,,,121361,,,,,,,,,true,,,false,false,,,,,
+,Old Gone Show,,,,,,user-series-555,,,555,,,,,,,,,false,,,false,false,,,,,

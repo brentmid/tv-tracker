@@ -115,3 +115,44 @@ async function addMovie(tmdbId, btn) {
     await post("/api/movies", { tmdb_id: tmdbId });
     location.reload();
 }
+
+// -- /import page -----------------------------------------------------------
+
+async function importSearch(stagingId, kind, btn) {
+    const card = document.getElementById(`staging-${stagingId}`);
+    const box = card.querySelector(".resolve-results");
+    const name = card.querySelector(".title").textContent;
+    btn.disabled = true;
+    box.innerHTML = '<p class="muted">Searching…</p>';
+    const url = kind === "show"
+        ? `/api/search/shows?q=${encodeURIComponent(name)}`
+        : `/api/search/movies?q=${encodeURIComponent(name)}`;
+    const res = await fetch(url);
+    btn.disabled = false;
+    if (!res.ok) {
+        box.innerHTML = '<p class="muted">Search failed.</p>';
+        return;
+    }
+    const data = await res.json();
+    if (!data.results.length) {
+        box.innerHTML = '<p class="muted">No candidates found — Skip, or rename and retry.</p>';
+        return;
+    }
+    box.innerHTML = data.results.slice(0, 5).map(r => {
+        const id = kind === "show" ? r.tvmaze_id : r.tmdb_id;
+        const label = kind === "show"
+            ? `${esc(r.name)} (${esc(r.premiered || "?")})`
+            : `${esc(r.title)}${r.year ? ` (${r.year})` : ""}`;
+        const payload = kind === "show" ? `{tvmaze_id: ${id}}` : `{tmdb_id: ${id}}`;
+        return `<p>${label}
+            <button class="primary"
+              onclick="resolveImport(${stagingId}, ${payload}, this)">Link</button></p>`;
+    }).join("");
+}
+
+async function resolveImport(stagingId, extra, btn) {
+    btn.disabled = true;
+    btn.textContent = "…";
+    await post("/api/import/resolve", { staging_id: stagingId, ...extra });
+    document.getElementById(`staging-${stagingId}`).remove();
+}

@@ -545,6 +545,69 @@ def resolve_staging_row(
     conn.commit()
 
 
+def list_unresolved_staging_shows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Show-kind staging rows still needing a human decision on /import."""
+    return conn.execute(
+        "SELECT * FROM import_staging WHERE kind = 'show' "
+        "AND match_status IN ('ambiguous', 'unmatched') "
+        "ORDER BY raw_show_name COLLATE NOCASE"
+    ).fetchall()
+
+
+def list_unresolved_staging_movie_groups(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """One row per unresolved movie (raw rows grouped by note key)."""
+    return conn.execute(
+        """
+        SELECT MIN(id) AS id, note, raw_title,
+               COUNT(*) AS row_count,
+               MIN(match_status) AS match_status,
+               MAX(watched_at) AS watched_at
+        FROM import_staging
+        WHERE kind = 'movie' AND match_status IN ('ambiguous', 'unmatched')
+        GROUP BY note
+        ORDER BY raw_title COLLATE NOCASE
+        """
+    ).fetchall()
+
+
+def staging_rows_by_note(
+    conn: sqlite3.Connection, note: str, kind: str | None = None
+) -> list[sqlite3.Row]:
+    if kind is None:
+        return conn.execute(
+            "SELECT * FROM import_staging WHERE note = ? ORDER BY id", (note,)
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM import_staging WHERE note = ? AND kind = ? ORDER BY id",
+        (note, kind),
+    ).fetchall()
+
+
+def set_staging_status_by_note(
+    conn: sqlite3.Connection,
+    note: str,
+    match_status: str,
+    *,
+    matched_show_id: int | None = None,
+    matched_movie_id: int | None = None,
+) -> int:
+    """Resolve/skip every staging row sharing a note key. Returns count."""
+    if match_status not in ("resolved", "skipped"):
+        raise ValueError(f"bad bulk resolution status: {match_status}")
+    cur = conn.execute(
+        """
+        UPDATE import_staging
+        SET match_status = ?,
+            matched_show_id = COALESCE(?, matched_show_id),
+            matched_movie_id = COALESCE(?, matched_movie_id)
+        WHERE note = ? AND match_status IN ('ambiguous', 'unmatched')
+        """,
+        (match_status, matched_show_id, matched_movie_id, note),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 # ---------------------------------------------------------------------------
 # Stats source rows (aggregation logic lives in tvtracker/stats.py)
 # ---------------------------------------------------------------------------

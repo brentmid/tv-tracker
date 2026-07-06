@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tvtracker import db, stats, tmdb, tvmaze  # noqa: E402
+from tvtracker import db, importer, stats, tmdb, tvmaze  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_DB_PATH = REPO_ROOT / "baselines" / "tvtracker.db"
@@ -134,6 +134,7 @@ def make_handler(
             (re.compile(r"^/add$"), "page_add"),
             (re.compile(r"^/movies$"), "page_movies"),
             (re.compile(r"^/stats$"), "page_stats"),
+            (re.compile(r"^/import$"), "page_import"),
             (re.compile(r"^/api/search/shows$"), "api_search_shows"),
             (re.compile(r"^/api/search/movies$"), "api_search_movies"),
             (re.compile(r"^/healthz$"), "api_healthz"),
@@ -149,6 +150,7 @@ def make_handler(
             (re.compile(r"^/api/movies/(\d+)/(watch|unwatch|delete)$"), "api_movie_action"),
             (re.compile(r"^/api/shows/(\d+)/refresh$"), "api_refresh_show"),
             (re.compile(r"^/api/refresh-all$"), "api_refresh_all"),
+            (re.compile(r"^/api/import/resolve$"), "api_import_resolve"),
         ]
 
         # -- plumbing ------------------------------------------------------
@@ -447,6 +449,126 @@ def make_handler(
 </div></div>""")
 
             self.send_html(render_page("Stats", "\n".join(parts), active_nav="stats"))
+
+        def page_import(self):
+            conn = self.conn()
+            shows = db.list_unresolved_staging_shows(conn)
+            movie_groups = db.list_unresolved_staging_movie_groups(conn)
+            parts = ["<h1>Import — needs a decision</h1>"]
+            if not shows and not movie_groups:
+                parts.append('<p class="muted">Nothing unresolved. '
+                             'Run <code>scripts/import-tvtime.py commit</code> '
+                             'to import, or you\'re all done.</p>')
+            if shows:
+                parts.append(f"<h2>Shows ({len(shows)})</h2>")
+            for row in shows:
+                name = html.escape(row["raw_show_name"] or "?")
+                parts.append(f"""\
+<div class="card" id="staging-{row['id']}">
+  <div class="grow">
+    <div class="title">{name}</div>
+    <div class="sub">{row['match_status']} · {html.escape(row['note'] or '')}</div>
+    <div class="resolve-results"></div>
+  </div>
+  <button onclick="importSearch({row['id']}, 'show', this)">Find</button>
+  <button onclick="resolveImport({row['id']}, {{skip: true}}, this)">Skip</button>
+</div>""")
+            if movie_groups:
+                parts.append(f"<h2>Movies ({len(movie_groups)})</h2>")
+            for row in movie_groups:
+                name = html.escape(row["raw_title"] or "?")
+                parts.append(f"""\
+<div class="card" id="staging-{row['id']}">
+  <div class="grow">
+    <div class="title">{name}</div>
+    <div class="sub">{row['match_status']}</div>
+    <div class="resolve-results"></div>
+  </div>
+  <button onclick="importSearch({row['id']}, 'movie', this)">Find</button>
+  <button onclick="resolveImport({row['id']}, {{skip: true}}, this)">Skip</button>
+</div>""")
+            self.send_html(render_page("Import", "\n".join(parts)))
+
+        def api_import_resolve(self):
+            body = self.read_json_body()
+            staging_id = body.get("staging_id")
+            if not isinstance(staging_id, int):
+                self.send_json({"error": "staging_id (int) required"}, 400)
+                return
+            conn = self.conn()
+            row = db.get_staging_row(conn, staging_id)
+            if row is None:
+                self.send_json({"error": "no such staging row"}, 404)
+                return
+            if row["match_status"] not in ("ambiguous", "unmatched"):
+                self.send_json({"error": "row already resolved"}, 409)
+                return
+
+            if body.get("skip"):
+                count = db.set_staging_status_by_note(conn, row["note"], "skipped")
+                self.send_json({"ok": True, "skipped_rows": count})
+                return
+
+            if row["kind"] == "show":
+                tvmaze_id = body.get("tvmaze_id")
+                if not isinstance(tvmaze_id, int):
+                    self.send_json({"error": "tvmaze_id (int) required"}, 400)
+                    return
+                state = json.loads(row["raw_json"])
+                followed = state.get("is_followed") == "true"
+                archived = state.get("is_archived") == "true"
+                status = "active" if followed and not archived else "archived"
+                watches = {
+                    (e["season"], e["number"]): {"watched_at": e["watched_at"],
+                                                 "raw": []}
+                    for e in db.staging_rows_by_note(conn, row["note"], "episode")
+                    if e["season"] is not None and e["number"] is not None
+                }
+                try:
+                    result = importer.apply_show(
+                        conn, tvm, {"id": tvmaze_id}, status, watches)
+                except tvmaze.TVMazeError as e:
+                    self.send_json({"error": str(e)}, 502)
+                    return
+                if result["show_id"] is None:
+                    self.send_json({"error": f"no TVmaze show {tvmaze_id}"}, 404)
+                    return
+                db.set_staging_status_by_note(
+                    conn, row["note"], "resolved",
+                    matched_show_id=result["show_id"])
+                self.send_json({"ok": True, **{k: v for k, v in result.items()
+                                               if k != "missing"},
+                                "missing": [list(sn) for sn in result["missing"]]})
+                return
+
+            if row["kind"] == "movie":
+                tmdb_id = body.get("tmdb_id")
+                if not isinstance(tmdb_id, int):
+                    self.send_json({"error": "tmdb_id (int) required"}, 400)
+                    return
+                raws = [json.loads(r["raw_json"])
+                        for r in db.staging_rows_by_note(conn, row["note"], "movie")]
+                watched = any(r.get("type") == "watch" for r in raws)
+                runtime_s = next((r.get("runtime") for r in raws
+                                  if (r.get("runtime") or "").isdigit()
+                                  and r.get("runtime") != "0"), None)
+                try:
+                    movie = tmdbc.movie(tmdb_id)
+                except tmdb.TMDBError as e:
+                    self.send_json({"error": str(e)}, 502)
+                    return
+                if movie is None:
+                    self.send_json({"error": f"no TMDB movie {tmdb_id}"}, 404)
+                    return
+                movie_id = importer.apply_movie(
+                    conn, tmdb.movie_fields(movie), watched, row["watched_at"],
+                    int(runtime_s) // 60 if runtime_s else None)
+                db.set_staging_status_by_note(
+                    conn, row["note"], "resolved", matched_movie_id=movie_id)
+                self.send_json({"ok": True, "movie_id": movie_id})
+                return
+
+            self.send_json({"error": f"cannot resolve kind {row['kind']}"}, 400)
 
         def api_search_movies(self):
             query = (self.query.get("q") or [""])[0].strip()
