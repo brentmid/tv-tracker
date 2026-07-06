@@ -227,7 +227,9 @@ def make_handler(
             parts = [f"""\
 <h1>Watch Next</h1>
 <p class="muted">{last_txt} ·
-  <button onclick="refreshBtn('/api/refresh-all', this)">Refresh all</button></p>"""]
+  <button onclick="refreshBtn('/api/refresh-all', this)">Refresh all</button></p>
+<p><input type="search" placeholder="Filter shows…"
+   oninput="filterCards(this.value)"></p>"""]
             if not queue and not waiting:
                 parts.append(
                     '<p class="muted">Nothing here yet — '
@@ -376,7 +378,9 @@ def make_handler(
 <h1>Movies</h1>
 <p><input type="search" id="q" placeholder="Search TMDB to add…"
    onkeydown="if(event.key==='Enter')searchMovies()"></p>
-<div id="results"></div>"""]
+<div id="results"></div>
+<p><input type="search" placeholder="Filter your movies…"
+   oninput="filterCards(this.value)"></p>"""]
 
             def movie_card(m, buttons):
                 title = html.escape(m["title"])

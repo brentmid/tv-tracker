@@ -116,6 +116,18 @@ async function addMovie(tmdbId, btn) {
     location.reload();
 }
 
+// Client-side filter for long card lists (queue, movies). Hides cards whose
+// text doesn't match; skips API search results in #results.
+function filterCards(text) {
+    const needle = text.trim().toLowerCase();
+    document.querySelectorAll("main .card").forEach(card => {
+        if (card.closest("#results")) return;
+        card.style.display =
+            !needle || card.textContent.toLowerCase().includes(needle)
+                ? "" : "none";
+    });
+}
+
 // -- /import page -----------------------------------------------------------
 
 async function importSearch(stagingId, kind, btn) {
