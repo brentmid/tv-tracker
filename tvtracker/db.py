@@ -213,11 +213,13 @@ def upsert_episode(
     name: str | None = None,
     airdate: str | None = None,
     runtime_min: int | None = None,
+    commit: bool = True,
 ) -> int:
     """Insert or refresh one episode's metadata. NEVER touches watched_at.
 
     This is the refresh path: air dates, names and runtimes update freely,
-    but watch state survives every refresh.
+    but watch state survives every refresh. Bulk callers (the importer)
+    pass commit=False and commit once per batch.
     """
     conn.execute(
         """
@@ -233,6 +235,8 @@ def upsert_episode(
         """,
         (show_id, tvmaze_episode_id, season, number, name, airdate, runtime_min),
     )
+    if commit:
+        conn.commit()
     row = conn.execute(
         "SELECT id FROM episodes WHERE tvmaze_episode_id = ?", (tvmaze_episode_id,)
     ).fetchone()

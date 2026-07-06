@@ -19,6 +19,7 @@ Env:
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -80,9 +81,15 @@ NAV_ITEMS = ("queue", "add", "archive", "movies", "stats")
 
 
 def render_page(title: str, content: str, active_nav: str = "") -> str:
-    """Wrap page content in the base chrome (nav, footer, dark theme)."""
+    """Wrap page content in the base chrome (nav, footer, dark theme).
+
+    `title` is plain text (escaped here); `content` is trusted HTML built
+    by the page methods, which escape user/API data as they build it.
+    """
     subs = {f"nav_{item}": "active" if item == active_nav else "" for item in NAV_ITEMS}
-    return PAGE_TEMPLATE.substitute(title=title, content=content, **subs)
+    return PAGE_TEMPLATE.substitute(
+        title=html.escape(title), content=content, **subs
+    )
 
 
 def make_handler(
@@ -97,10 +104,17 @@ def make_handler(
         # regex groups become positional args to the method.
         GET_ROUTES = [
             (re.compile(r"^/$"), "page_queue"),
+            (re.compile(r"^/show/(\d+)$"), "page_show"),
+            (re.compile(r"^/archive$"), "page_archive"),
             (re.compile(r"^/healthz$"), "api_healthz"),
             (re.compile(r"^/assets/([A-Za-z0-9._-]+)$"), "serve_asset"),
         ]
-        POST_ROUTES: list[tuple[re.Pattern, str]] = []
+        POST_ROUTES = [
+            (re.compile(r"^/api/episodes/(\d+)/(watch|unwatch)$"), "api_episode_watch"),
+            (re.compile(r"^/api/shows/(\d+)/watch-season$"), "api_watch_season"),
+            (re.compile(r"^/api/shows/(\d+)/watch-all$"), "api_watch_all"),
+            (re.compile(r"^/api/shows/(\d+)/(archive|unarchive)$"), "api_show_archive"),
+        ]
 
         # -- plumbing ------------------------------------------------------
 
@@ -168,14 +182,132 @@ def make_handler(
         # -- routes ----------------------------------------------------------
 
         def page_queue(self):
-            # Real queue UI lands in M3; this proves template + DB plumbing.
             queue, waiting = db.watch_next(self.conn())
-            content = (
-                f"<h1>Watch Next</h1>"
-                f"<p class=\"muted\">{len(queue)} in queue, "
-                f"{len(waiting)} waiting for new episodes.</p>"
-            )
-            self.send_html(render_page("Queue", content, active_nav="queue"))
+            parts = ["<h1>Watch Next</h1>"]
+            if not queue and not waiting:
+                parts.append(
+                    '<p class="muted">Nothing here yet — '
+                    '<a href="/add">add a show</a> or run the importer.</p>'
+                )
+            for row in queue:
+                name = html.escape(row["name"])
+                ep_label = f"S{row['episode_season']:02d}E{row['episode_number']:02d}"
+                ep_name = html.escape(row["episode_name"] or "")
+                more = row["unwatched_aired_count"] - 1
+                more_txt = f" · +{more} more" if more > 0 else ""
+                parts.append(f"""\
+<div class="card">
+  <div class="grow">
+    <div class="title"><a href="/show/{row['id']}">{name}</a></div>
+    <div class="sub">{ep_label} · {ep_name} · {row['episode_airdate']}{more_txt}</div>
+  </div>
+  <button class="primary" onclick="act('/api/episodes/{row['episode_id']}/watch')">✓</button>
+</div>""")
+            if waiting:
+                parts.append('<h2 class="muted">Waiting for new episodes</h2>')
+                for row in waiting:
+                    name = html.escape(row["name"])
+                    next_txt = (f"next episode {row['next_airdate']}"
+                                if row["next_airdate"] else "no airdate announced")
+                    parts.append(f"""\
+<div class="card">
+  <div class="grow">
+    <div class="title"><a href="/show/{row['id']}">{name}</a></div>
+    <div class="sub">{next_txt}</div>
+  </div>
+</div>""")
+            self.send_html(render_page("Queue", "\n".join(parts), active_nav="queue"))
+
+        def page_show(self, show_id: str):
+            conn = self.conn()
+            show = db.get_show(conn, int(show_id))
+            if show is None:
+                self.send_error(404, "no such show")
+                return
+            episodes = db.list_episodes(conn, show["id"])
+            name = html.escape(show["name"])
+            archived = show["status"] == "archived"
+            arch_action = "unarchive" if archived else "archive"
+            watched_count = sum(1 for e in episodes if e["watched_at"])
+            parts = [f"""\
+<h1>{name}</h1>
+<p class="muted">{html.escape(show["tvmaze_status"] or "")}
+ · {watched_count}/{len(episodes)} watched{" · ARCHIVED" if archived else ""}</p>
+<p>
+  <button onclick="act('/api/shows/{show['id']}/{arch_action}')">{arch_action.title()}</button>
+  <button onclick="act('/api/shows/{show['id']}/watch-all')">Mark all watched</button>
+</p>"""]
+            season = None
+            for ep in episodes:
+                if ep["season"] != season:
+                    season = ep["season"]
+                    parts.append(f"""\
+<h2>Season {season}
+  <button onclick="act('/api/shows/{show['id']}/watch-season', {{season: {season}}})">
+  Mark season watched</button></h2>""")
+                ep_label = f"S{ep['season']:02d}E{ep['number']:02d}"
+                ep_name = html.escape(ep["name"] or "")
+                if ep["watched_at"]:
+                    btn = (f"<button onclick=\"act('/api/episodes/{ep['id']}/unwatch')\""
+                           f" title=\"tap to unwatch\">✓</button>")
+                    cls = "sub"
+                else:
+                    btn = (f"<button class=\"primary\" "
+                           f"onclick=\"act('/api/episodes/{ep['id']}/watch')\">watch</button>")
+                    cls = "title"
+                parts.append(f"""\
+<div class="card">
+  <div class="grow">
+    <div class="{cls}">{ep_label} · {ep_name}</div>
+    <div class="sub">{ep["airdate"] or "no airdate"}</div>
+  </div>
+  {btn}
+</div>""")
+            self.send_html(render_page(show["name"], "\n".join(parts)))
+
+        def page_archive(self):
+            shows = db.list_shows(self.conn(), "archived")
+            parts = ["<h1>Archive</h1>"]
+            if not shows:
+                parts.append('<p class="muted">No archived shows.</p>')
+            for show in shows:
+                name = html.escape(show["name"])
+                parts.append(f"""\
+<div class="card">
+  <div class="grow"><div class="title"><a href="/show/{show['id']}">{name}</a></div></div>
+  <button onclick="act('/api/shows/{show['id']}/unarchive')">Unarchive</button>
+</div>""")
+            self.send_html(render_page("Archive", "\n".join(parts), active_nav="archive"))
+
+        def api_episode_watch(self, episode_id: str, action: str):
+            conn = self.conn()
+            if db.get_episode(conn, int(episode_id)) is None:
+                self.send_json({"error": "no such episode"}, 404)
+                return
+            db.set_episode_watched(conn, int(episode_id), action == "watch")
+            self.send_json({"ok": True})
+
+        def api_watch_season(self, show_id: str):
+            body = self.read_json_body()
+            season = body.get("season")
+            if not isinstance(season, int):
+                self.send_json({"error": "season (int) required"}, 400)
+                return
+            count = db.watch_season(self.conn(), int(show_id), season)
+            self.send_json({"ok": True, "marked": count})
+
+        def api_watch_all(self, show_id: str):
+            count = db.watch_all(self.conn(), int(show_id))
+            self.send_json({"ok": True, "marked": count})
+
+        def api_show_archive(self, show_id: str, action: str):
+            conn = self.conn()
+            if db.get_show(conn, int(show_id)) is None:
+                self.send_json({"error": "no such show"}, 404)
+                return
+            status = "archived" if action == "archive" else "active"
+            db.set_show_status(conn, int(show_id), status)
+            self.send_json({"ok": True, "status": status})
 
         def api_healthz(self):
             shows = self.conn().execute("SELECT COUNT(*) FROM shows").fetchone()[0]
