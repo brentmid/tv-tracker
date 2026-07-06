@@ -1,0 +1,116 @@
+/* tv-tracker — dark (OLED-true-black), mobile-first. No frameworks. */
+
+:root {
+    --bg: #000;
+    --surface: #141414;
+    --surface-2: #1f1f1f;
+    --text: #e6e6e6;
+    --muted: #8a8a8a;
+    --accent: #4cc2ff;
+    --accent-dim: #1a3d4f;
+    --danger: #ff6b6b;
+    --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+
+main {
+    padding: 0 16px 24px;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+h1 { font-size: 1.4rem; margin: 16px 0 8px; }
+h2 { font-size: 1.1rem; margin: 20px 0 8px; }
+a { color: var(--accent); text-decoration: none; }
+.muted { color: var(--muted); }
+
+/* -- top navigation ------------------------------------------------------ */
+
+.topnav {
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    position: sticky;
+    top: 0;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--surface-2);
+    overflow-x: auto;
+}
+
+.topnav a {
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.topnav a.active {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+/* -- cards / lists ------------------------------------------------------- */
+
+.card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin: 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.card .grow { flex: 1; min-width: 0; }
+.card .title { font-weight: 600; }
+.card .sub { color: var(--muted); font-size: 0.875rem; }
+
+/* -- buttons ------------------------------------------------------------- */
+
+button {
+    background: var(--surface-2);
+    color: var(--text);
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 0.9375rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+button.primary { background: var(--accent-dim); color: var(--accent); }
+button.danger { color: var(--danger); }
+button:active { filter: brightness(1.3); }
+
+/* -- forms --------------------------------------------------------------- */
+
+input[type="search"], input[type="text"] {
+    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--surface-2);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 1rem;
+}
+
+/* -- footer -------------------------------------------------------------- */
+
+footer {
+    padding: 16px;
+    max-width: 720px;
+    margin: 0 auto;
+    color: var(--muted);
+    font-size: 0.75rem;
+    border-top: 1px solid var(--surface-2);
+}
