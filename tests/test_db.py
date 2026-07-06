@@ -253,6 +253,63 @@ def test_queue_earliest_by_season_number_not_airdate(conn):
     assert (queue[0]["episode_season"], queue[0]["episode_number"]) == (1, 1)
 
 
+def test_queue_sort_highest_percentage(conn):
+    # Nearly Done: 3 of 4 aired watched (75%). Barely Begun: 1 of 4 (25%).
+    a = add_show(conn, 1, "Barely Begun")
+    add_ep(conn, a, 100, 1, 1, airdate="2020-01-01",
+           watched_at="2020-01-02T00:00:00+00:00")
+    for i in range(2, 5):
+        add_ep(conn, a, 100 + i, 1, i, airdate="2020-01-08")
+    b = add_show(conn, 2, "Nearly Done")
+    for i in range(1, 4):
+        add_ep(conn, b, 200 + i, 1, i, airdate="2020-01-01",
+               watched_at="2020-01-02T00:00:00+00:00")
+    add_ep(conn, b, 205, 1, 4, airdate="2020-01-08")
+    queue, _ = db.watch_next(conn, as_of=TODAY, sort="pct")
+    assert [r["name"] for r in queue] == ["Nearly Done", "Barely Begun"]
+    assert queue[0]["watched_pct"] == 75.0
+    assert queue[1]["watched_pct"] == 25.0
+
+
+def test_not_started_sort_by_most_episodes(conn):
+    a = add_show(conn, 1, "Short But New")
+    add_ep(conn, a, 100, 1, 1, airdate="2026-06-01")
+    b = add_show(conn, 2, "Long Backlog")
+    for i in range(1, 6):
+        add_ep(conn, b, 200 + i, 1, i, airdate="2015-01-01")
+    assert [r["name"] for r in db.not_started(conn, as_of=TODAY)] == \
+        ["Short But New", "Long Backlog"]          # default: latest airdate
+    rows = db.not_started(conn, as_of=TODAY, sort="episodes")
+    assert [r["name"] for r in rows] == ["Long Backlog", "Short But New"]
+    assert rows[0]["aired_count"] == 5
+
+
+def test_archived_shows_default_sort_highest_percentage(conn):
+    a = add_show(conn, 1, "Almost Finished It")
+    for i in range(1, 4):
+        add_ep(conn, a, 100 + i, 1, i, airdate="2020-01-01",
+               watched_at="2020-01-02T00:00:00+00:00")
+    add_ep(conn, a, 105, 1, 4, airdate="2020-01-08")
+    db.set_show_status(conn, a, "archived")
+    b = add_show(conn, 2, "Barely Touched")
+    add_ep(conn, b, 200, 1, 1, airdate="2020-01-01",
+           watched_at="2020-01-02T00:00:00+00:00")
+    add_ep(conn, b, 201, 1, 2, airdate="2020-01-08")
+    db.set_show_status(conn, b, "archived")
+    c = add_show(conn, 3, "A Nothing Aired Show")
+    add_ep(conn, c, 300, 1, 1, airdate="2099-01-01")
+    db.set_show_status(conn, c, "archived")
+
+    rows = db.archived_shows(conn, as_of=TODAY)
+    assert [r["name"] for r in rows] == \
+        ["Almost Finished It", "Barely Touched", "A Nothing Aired Show"]
+    assert rows[0]["watched_pct"] == 75.0
+    assert (rows[0]["watched_count"], rows[0]["aired_count"]) == (3, 4)
+    assert rows[2]["watched_pct"] is None          # nothing aired -> last
+    assert [r["name"] for r in db.archived_shows(conn, sort="name", as_of=TODAY)] == \
+        ["A Nothing Aired Show", "Almost Finished It", "Barely Touched"]
+
+
 def test_finished_derivation_and_transitions(conn):
     sid = add_show(conn, 1, "Mini Series")
     e1 = add_ep(conn, sid, 100, 1, 1, airdate="2020-01-01",

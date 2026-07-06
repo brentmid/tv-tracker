@@ -89,6 +89,16 @@ $content
 NAV_ITEMS = ("queue", "notstarted", "finished", "add", "archive", "movies", "stats")
 
 
+def sort_select(base_path: str, labels: list[tuple[str, str]], current: str) -> str:
+    """A <select> that reloads the page with ?sort=<value> on change."""
+    options = "".join(
+        f'<option value="{value}"{" selected" if value == current else ""}>'
+        f"{label}</option>"
+        for value, label in labels)
+    return (f"<select onchange=\"location.href='{base_path}?sort='+this.value\">"
+            f"{options}</select>")
+
+
 def render_page(title: str, content: str, active_nav: str = "") -> str:
     """Wrap page content in the base chrome (nav, footer, dark theme).
 
@@ -231,30 +241,29 @@ def make_handler(
 
         QUEUE_SORT_LABELS = [
             ("recent", "Recently watched"),
+            ("pct", "Highest %"),
             ("oldest", "Waiting longest"),
             ("newest", "Newest episodes"),
             ("name", "A–Z"),
         ]
 
+        def sort_param(self, sorts: dict, default: str) -> str:
+            value = (self.query.get("sort") or [default])[0]
+            return value if value in sorts else default
+
         def page_queue(self):
             conn = self.conn()
-            sort = (self.query.get("sort") or ["recent"])[0]
-            if sort not in db.QUEUE_SORTS:
-                sort = "recent"
+            sort = self.sort_param(db.QUEUE_SORTS, "recent")
             queue, waiting = db.watch_next(conn, sort=sort)
             last_refresh = db.get_meta(conn, "last_refresh_all")
             last_txt = (f"air dates refreshed {html.escape(last_refresh[:16])}Z"
                         if last_refresh else "air dates never refreshed")
-            options = "".join(
-                f'<option value="{value}"{" selected" if value == sort else ""}>'
-                f"{label}</option>"
-                for value, label in self.QUEUE_SORT_LABELS)
             parts = [f"""\
 <h1>Watch Next</h1>
 <p class="muted">{last_txt} ·
   <button onclick="refreshBtn('/api/refresh-all', this)">Refresh all</button></p>
 <p style="display:flex;gap:8px">
-  <select onchange="location.href='/?sort='+this.value">{options}</select>
+  {sort_select("/", self.QUEUE_SORT_LABELS, sort)}
   <input type="search" placeholder="Filter shows…"
    oninput="filterCards(this.value)" style="flex:1">
 </p>"""]
@@ -271,6 +280,8 @@ def make_handler(
                 more_txt = f" · +{more} more" if more > 0 else ""
                 last_txt = (f" · last watched {row['last_watched_at'][:10]}"
                             if row["last_watched_at"] else "")
+                if row["watched_pct"] is not None:
+                    last_txt += f" · {row['watched_pct']:.0f}% watched"
                 parts.append(f"""\
 <div class="card">
   <div class="grow">
@@ -294,14 +305,22 @@ def make_handler(
 </div>""")
             self.send_html(render_page("Queue", "\n".join(parts), active_nav="queue"))
 
+        NOT_STARTED_SORT_LABELS = [
+            ("latest", "Latest episode"),
+            ("episodes", "Most episodes"),
+        ]
+
         def page_not_started(self):
-            rows = db.not_started(self.conn())
+            sort = self.sort_param(db.NOT_STARTED_SORTS, "latest")
+            rows = db.not_started(self.conn(), sort=sort)
             parts = [f"""\
 <h1>Not started</h1>
-<p class="muted">{len(rows)} shows you follow but haven't begun ·
- sorted by their latest episode's release date</p>
-<p><input type="search" placeholder="Filter shows…"
-   oninput="filterCards(this.value)"></p>"""]
+<p class="muted">{len(rows)} shows you follow but haven't begun</p>
+<p style="display:flex;gap:8px">
+  {sort_select("/not-started", self.NOT_STARTED_SORT_LABELS, sort)}
+  <input type="search" placeholder="Filter shows…"
+   oninput="filterCards(this.value)" style="flex:1">
+</p>"""]
             if not rows:
                 parts.append('<p class="muted">Nothing here — everything '
                              'you follow is started or waiting.</p>')
@@ -394,22 +413,33 @@ def make_handler(
             self.send_html(render_page("Finished", "\n".join(parts),
                                        active_nav="finished"))
 
+        ARCHIVE_SORT_LABELS = [
+            ("pct", "Highest %"),
+            ("name", "A–Z"),
+        ]
+
         def page_archive(self):
-            shows = db.list_shows(self.conn(), "archived")
-            parts = ["<h1>Archive</h1>",
-                     '<p class="muted">Shows you stopped watching. '
-                     'Fully-watched shows live in Finished instead.</p>']
+            sort = self.sort_param(db.ARCHIVE_SORTS, "pct")
+            shows = db.archived_shows(self.conn(), sort=sort)
+            parts = [f"""\
+<h1>Archive</h1>
+<p class="muted">Shows you stopped watching.
+ Fully-watched shows live in Finished instead.</p>
+<p>{sort_select("/archive", self.ARCHIVE_SORT_LABELS, sort)}</p>"""]
             if not shows:
                 parts.append('<p class="muted">No archived shows.</p>')
             for show in shows:
                 name = html.escape(show["name"])
                 last_txt = (f"last watched {show['last_watched_at'][:10]}"
                             if show["last_watched_at"] else "never watched")
+                pct_txt = (f"{show['watched_pct']:.0f}% watched "
+                           f"({show['watched_count']}/{show['aired_count']}) · "
+                           if show["watched_pct"] is not None else "")
                 parts.append(f"""\
 <div class="card">
   <div class="grow">
     <div class="title"><a href="/show/{show['id']}">{name}</a></div>
-    <div class="sub">{last_txt}</div>
+    <div class="sub">{pct_txt}{last_txt}</div>
   </div>
   <button onclick="act('/api/shows/{show['id']}/unarchive')">Unarchive</button>
 </div>""")
@@ -474,11 +504,13 @@ def make_handler(
                 title = html.escape(m["title"])
                 year = f" ({m['year']})" if m["year"] else ""
                 runtime = f" · {m['runtime_min']} min" if m["runtime_min"] else ""
+                watched = (f" · watched {m['watched_at'][:10]}"
+                           if m["status"] == "watched" and m["watched_at"] else "")
                 return f"""\
 <div class="card">
   <div class="grow">
     <div class="title">{title}{year}</div>
-    <div class="sub">{m["status"]}{runtime}</div>
+    <div class="sub">{m["status"]}{runtime}{watched}</div>
   </div>
   {buttons}
 </div>"""

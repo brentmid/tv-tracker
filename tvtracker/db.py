@@ -314,6 +314,7 @@ def watch_all(conn: sqlite3.Connection, show_id: int) -> int:
 # shows sink to the bottom alphabetically.
 QUEUE_SORTS = {
     "recent": "last_watched_at IS NULL, last_watched_at DESC, s.name COLLATE NOCASE",
+    "pct": "watched_pct DESC, s.name COLLATE NOCASE",
     "oldest": "e.airdate, s.name COLLATE NOCASE",
     "newest": "e.airdate DESC, s.name COLLATE NOCASE",
     "name": "s.name COLLATE NOCASE",
@@ -351,7 +352,13 @@ def watch_next(
                    AND e2.airdate IS NOT NULL
                    AND e2.airdate <= :as_of) AS unwatched_aired_count,
                (SELECT MAX(e4.watched_at) FROM episodes e4
-                 WHERE e4.show_id = s.id) AS last_watched_at
+                 WHERE e4.show_id = s.id) AS last_watched_at,
+               (SELECT COUNT(*) FROM episodes ec
+                 WHERE ec.show_id = s.id AND ec.watched_at IS NOT NULL) * 100.0
+               / NULLIF((SELECT COUNT(*) FROM episodes ea
+                          WHERE ea.show_id = s.id
+                            AND ea.airdate IS NOT NULL
+                            AND ea.airdate <= :as_of), 0) AS watched_pct
         FROM shows s
         JOIN episodes e ON e.id = (
             SELECT e3.id FROM episodes e3
@@ -398,18 +405,26 @@ def watch_next(
     return queue, waiting
 
 
+NOT_STARTED_SORTS = {
+    "latest": "latest_airdate IS NULL, latest_airdate DESC, s.name COLLATE NOCASE",
+    "episodes": "aired_count DESC, s.name COLLATE NOCASE",
+}
+
+
 def not_started(
-    conn: sqlite3.Connection, as_of: str | None = None
+    conn: sqlite3.Connection, as_of: str | None = None, sort: str = "latest"
 ) -> list[sqlite3.Row]:
     """Active shows with aired episodes but no watches at all — the
     "Not started" tab. Same card shape as the queue (next episode = the
     earliest aired one, normally S01E01), plus latest_airdate = the airdate
     of the show's latest scheduled episode (may be in the future for airing
-    shows). Sorted by that latest airdate, newest first; undated last.
+    shows). Default sort: latest airdate, newest first, undated last;
+    "episodes" sorts by most aired episodes.
     """
     as_of = as_of or today()
+    order_by = NOT_STARTED_SORTS.get(sort) or NOT_STARTED_SORTS["latest"]
     return conn.execute(
-        """
+        f"""
         SELECT s.*,
                e.id      AS episode_id,
                e.season  AS episode_season,
@@ -435,8 +450,48 @@ def not_started(
           AND NOT EXISTS (SELECT 1 FROM episodes ew
                            WHERE ew.show_id = s.id
                              AND ew.watched_at IS NOT NULL)
-        ORDER BY latest_airdate IS NULL, latest_airdate DESC,
-                 s.name COLLATE NOCASE
+        ORDER BY {order_by}
+        """,
+        {"as_of": as_of},
+    ).fetchall()
+
+
+ARCHIVE_SORTS = {
+    "pct": "watched_pct IS NULL, watched_pct DESC, s.name COLLATE NOCASE",
+    "name": "s.name COLLATE NOCASE",
+}
+
+
+def archived_shows(
+    conn: sqlite3.Connection, sort: str = "pct", as_of: str | None = None
+) -> list[sqlite3.Row]:
+    """Archive tab rows: archived shows plus watch-progress columns.
+    Default sort: highest watched percentage (of aired episodes) first;
+    shows with nothing aired sort last. "name" = alphabetical.
+    """
+    as_of = as_of or today()
+    order_by = ARCHIVE_SORTS.get(sort) or ARCHIVE_SORTS["pct"]
+    return conn.execute(
+        f"""
+        SELECT s.*,
+               (SELECT MAX(e.watched_at) FROM episodes e
+                 WHERE e.show_id = s.id) AS last_watched_at,
+               (SELECT COUNT(*) FROM episodes ec
+                 WHERE ec.show_id = s.id
+                   AND ec.watched_at IS NOT NULL) AS watched_count,
+               (SELECT COUNT(*) FROM episodes ea
+                 WHERE ea.show_id = s.id
+                   AND ea.airdate IS NOT NULL
+                   AND ea.airdate <= :as_of) AS aired_count,
+               (SELECT COUNT(*) FROM episodes ec
+                 WHERE ec.show_id = s.id AND ec.watched_at IS NOT NULL) * 100.0
+               / NULLIF((SELECT COUNT(*) FROM episodes ea
+                          WHERE ea.show_id = s.id
+                            AND ea.airdate IS NOT NULL
+                            AND ea.airdate <= :as_of), 0) AS watched_pct
+        FROM shows s
+        WHERE s.status = 'archived'
+        ORDER BY {order_by}
         """,
         {"as_of": as_of},
     ).fetchall()

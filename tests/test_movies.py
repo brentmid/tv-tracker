@@ -75,6 +75,8 @@ def test_movies_page_sections(srv):
     assert "Watchlist (1)" in page and "Watched (1)" in page
     assert "To Watch &amp; Enjoy (2024)" in page
     assert "Seen It (2020)" in page and "101 min" in page
+    assert "· watched 20" in page                 # watched date on the card
+    assert page.count("· watched 20") == 1        # watchlist card has none
     assert f"/api/movies/{a}/watch" in page and f"/api/movies/{a}/delete" in page
     assert f"/api/movies/{b}/unwatch" in page
 
