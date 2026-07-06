@@ -28,9 +28,11 @@ Living checklist. **Update after every work chunk** — this file (plus `docs/pl
   - [x] `/import` page + `POST /api/import/resolve` (show: link tvmaze_id → apply staged watches, or skip-by-note; movie: link tmdb_id or skip)
   - [x] Synthetic fixtures `tests/fixtures/tvtime_export/` (real headers, watch-tracking columns only) — 99 tests green
   - [x] Offline dry-run vs REAL zip: 512 shows (476 active/36 archived), 8,049 unique episode watches, 429 movies (215 watched). 14 nb_episodes_seen validation gaps = TV Time's own stale counters; The Borgias has a counter of 20 but zero watch rows in the export (nothing importable)
-  - [ ] Live dry-run (running in background) → review report with Brent
-  - [ ] ~~Wipe dev DB~~ APPROVED + DONE 2026-07-06 → `commit` → resolve stragglers at `/import` → validate counts
-  - [ ] **TODO after commit (from Brent)**: The Borgias has nb_episodes_seen=20 but ZERO watch rows in the export — Brent confirms he watched the whole series. After the import, add The Borgias via TVmaze (thetvdb id in export s_id; use `/add` or lookup) and mark ALL episodes watched, then archive it (it ended in 2013 and isn't followed).
+  - [x] Live dry-run: **all 512 shows resolved** (507 by TheTVDB id, 5 fuzzy, 0 ambiguous, 0 unmatched); 14 shows with ~35 episode-numbering mismatches (specials/split seasons — stay staged, never mis-marked)
+  - [x] Dev DB wiped (approved) → **real import committed 2026-07-06**: 512 shows → 511 DB rows (two TVDB ids collapse to one TVmaze show), 17,547 episodes cached, **8,015 watches marked**, 34 mismatch rows staged; movies: 332 resolved → 281 DB rows (dupes collapse), 153 watched, **97 movie groups staged for `/import`** (TMDB name+year misses). Staging holds 9,279 raw rows.
+  - [x] The Borgias (0 export watch rows, Brent watched it all): all 29 episodes marked watched (import-time timestamps — original dates unknown), left active per export follow state; fully-watched so it's out of the queue.
+  - [ ] **Brent's manual tail**: resolve/skip the 97 staged movie groups at `/import` (link to TMDB or skip).
+  - [ ] Note for Brent: queue holds 363 shows — TV Time counted 476 shows as "followed", so old abandoned shows sit in the queue with unwatched aired episodes. Archive from the UI as encountered (or we bulk-archive by a rule, e.g. no watch in N years, if asked).
 - [ ] M10 Post-MVP (file as GitHub issues when repo is pushed): daily-refresh LaunchAgent, sqlite backup script, GitHub private repo push, rewatch support
 
 ## Waiting on Brent
