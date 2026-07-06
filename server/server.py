@@ -575,7 +575,9 @@ def make_handler(
                 parts.append("<h2>Top shows by hours</h2>")
                 for i, entry in enumerate(data["top_shows"], 1):
                     parts.append(f"""\
-<div class="card"><div class="grow">
+<div class="card">
+  {poster_img(entry["image_url"])}
+  <div class="grow">
   <div class="title">{i}. {html.escape(entry["name"])}</div>
   <div class="sub">{stats.fmt_hours(entry["minutes"])} · {entry["episodes"]} episodes</div>
 </div></div>""")

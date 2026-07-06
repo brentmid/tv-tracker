@@ -107,6 +107,7 @@ def test_stats_page_renders(conn, tmp_path):
         assert "2 movies" in page
         assert "Top shows by hours" in page
         assert "Show A" in page
+        assert 'class="poster' in page          # top-shows cards carry posters
         assert "counted as 40 min" in page      # fallback disclosure
         assert "no\nruntime on record" in page or "no runtime on record" in page
     finally:

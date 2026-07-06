@@ -41,7 +41,8 @@ def compute_stats(conn: sqlite3.Connection) -> dict:
         total_min += minutes
         fallback_count += used_fallback
         entry = per_show_min.setdefault(
-            row["show_id"], {"name": row["show_name"], "episodes": 0, "minutes": 0})
+            row["show_id"], {"name": row["show_name"], "episodes": 0,
+                             "minutes": 0, "image_url": row["show_image_url"]})
         entry["episodes"] += 1
         entry["minutes"] += minutes
         year = (row["watched_at"] or "")[:4] or "unknown"

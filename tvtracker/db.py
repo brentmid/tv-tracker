@@ -790,7 +790,8 @@ def watched_episode_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                e.runtime_min      AS episode_runtime_min,
                s.runtime_min      AS show_runtime_min,
                s.id               AS show_id,
-               s.name             AS show_name
+               s.name             AS show_name,
+               s.image_url        AS show_image_url
         FROM episodes e
         JOIN shows s ON s.id = e.show_id
         WHERE e.watched_at IS NOT NULL
