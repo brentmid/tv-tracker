@@ -1,0 +1,34 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "id": 27205,
+      "title": "Inception",
+      "original_title": "Inception",
+      "release_date": "2010-07-15",
+      "poster_path": "/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg",
+      "vote_average": 8.4,
+      "overview": "Cobb, a skilled thief who commits corporate espionage..."
+    },
+    {
+      "id": 64956,
+      "title": "Inception: The Cobol Job",
+      "original_title": "Inception: The Cobol Job",
+      "release_date": "2010-12-07",
+      "poster_path": null,
+      "vote_average": 7.0,
+      "overview": "Prequel comic..."
+    },
+    {
+      "id": 12345,
+      "title": "Undated Obscurity",
+      "original_title": "Undated Obscurity",
+      "release_date": "",
+      "poster_path": null,
+      "vote_average": 0.0,
+      "overview": ""
+    }
+  ],
+  "total_pages": 1,
+  "total_results": 3
+}

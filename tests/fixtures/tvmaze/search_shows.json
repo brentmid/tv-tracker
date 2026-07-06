@@ -1,0 +1,39 @@
+[
+  {
+    "score": 0.91,
+    "show": {
+      "id": 82,
+      "url": "https://www.tvmaze.com/shows/82/game-of-thrones",
+      "name": "Game of Thrones",
+      "type": "Scripted",
+      "language": "English",
+      "status": "Ended",
+      "runtime": 60,
+      "averageRuntime": 61,
+      "premiered": "2011-04-17",
+      "ended": "2019-05-19",
+      "image": {
+        "medium": "https://static.tvmaze.com/uploads/images/medium_portrait/498/1245274.jpg",
+        "original": "https://static.tvmaze.com/uploads/images/original_untouched/498/1245274.jpg"
+      },
+      "externals": { "tvrage": 24493, "thetvdb": 121361, "imdb": "tt0944947" }
+    }
+  },
+  {
+    "score": 0.62,
+    "show": {
+      "id": 23482,
+      "url": "https://www.tvmaze.com/shows/23482/game-of-thrones-conquest-rebellion",
+      "name": "Game of Thrones: Conquest & Rebellion",
+      "type": "Animation",
+      "language": "English",
+      "status": "Ended",
+      "runtime": null,
+      "averageRuntime": 8,
+      "premiered": "2017-12-02",
+      "ended": "2017-12-02",
+      "image": null,
+      "externals": { "tvrage": null, "thetvdb": null, "imdb": null }
+    }
+  }
+]

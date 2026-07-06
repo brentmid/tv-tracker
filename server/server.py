@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tvtracker import db  # noqa: E402
+from tvtracker import db, tvmaze  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_DB_PATH = REPO_ROOT / "baselines" / "tvtracker.db"
@@ -95,9 +95,12 @@ def render_page(title: str, content: str, active_nav: str = "") -> str:
 def make_handler(
     db_path: str | Path = DEFAULT_DB_PATH,
     assets_dir: Path = ASSETS_DIR,
+    tvmaze_client: tvmaze.TVMazeClient | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """Build a Handler class closed over its dependencies (tests inject a
-    tmp-path DB). One DB connection per request, opened lazily."""
+    tmp-path DB and a fixture-fed TVmaze client). One DB connection per
+    request, opened lazily."""
+    tvm = tvmaze_client or tvmaze.TVMazeClient()
 
     class Handler(BaseHTTPRequestHandler):
         # Routes are (compiled regex, method name). The first match wins;
@@ -106,10 +109,13 @@ def make_handler(
             (re.compile(r"^/$"), "page_queue"),
             (re.compile(r"^/show/(\d+)$"), "page_show"),
             (re.compile(r"^/archive$"), "page_archive"),
+            (re.compile(r"^/add$"), "page_add"),
+            (re.compile(r"^/api/search/shows$"), "api_search_shows"),
             (re.compile(r"^/healthz$"), "api_healthz"),
             (re.compile(r"^/assets/([A-Za-z0-9._-]+)$"), "serve_asset"),
         ]
         POST_ROUTES = [
+            (re.compile(r"^/api/shows$"), "api_add_show"),
             (re.compile(r"^/api/episodes/(\d+)/(watch|unwatch)$"), "api_episode_watch"),
             (re.compile(r"^/api/shows/(\d+)/watch-season$"), "api_watch_season"),
             (re.compile(r"^/api/shows/(\d+)/watch-all$"), "api_watch_all"),
@@ -278,6 +284,62 @@ def make_handler(
   <button onclick="act('/api/shows/{show['id']}/unarchive')">Unarchive</button>
 </div>""")
             self.send_html(render_page("Archive", "\n".join(parts), active_nav="archive"))
+
+        def page_add(self):
+            content = """\
+<h1>Add a show</h1>
+<p><input type="search" id="q" placeholder="Search TVmaze…" autofocus
+   onkeydown="if(event.key==='Enter')searchShows()"></p>
+<div id="results"></div>"""
+            self.send_html(render_page("Add", content, active_nav="add"))
+
+        def api_search_shows(self):
+            query = (self.query.get("q") or [""])[0].strip()
+            if not query:
+                self.send_json({"error": "q required"}, 400)
+                return
+            try:
+                results = tvm.search_shows(query)
+            except tvmaze.TVMazeError as e:
+                self.send_json({"error": str(e)}, 502)
+                return
+            conn = self.conn()
+            trimmed = []
+            for item in results:
+                fields = tvmaze.show_fields(item["show"])
+                existing = db.get_show_by_tvmaze_id(conn, fields["tvmaze_id"])
+                fields["already_added"] = existing is not None
+                trimmed.append(fields)
+            self.send_json({"results": trimmed})
+
+        def api_add_show(self):
+            body = self.read_json_body()
+            tvmaze_id = body.get("tvmaze_id")
+            if not isinstance(tvmaze_id, int):
+                self.send_json({"error": "tvmaze_id (int) required"}, 400)
+                return
+            try:
+                show = tvm.show_with_episodes(tvmaze_id)
+            except tvmaze.TVMazeError as e:
+                self.send_json({"error": str(e)}, 502)
+                return
+            if show is None:
+                self.send_json({"error": f"no TVmaze show {tvmaze_id}"}, 404)
+                return
+            conn = self.conn()
+            show_id = db.upsert_show(conn, **tvmaze.show_fields(show))
+            skipped = 0
+            for ep in tvmaze.embedded_episodes(show):
+                fields = tvmaze.episode_fields(ep)
+                if fields is None:
+                    skipped += 1
+                    continue
+                db.upsert_episode(conn, show_id=show_id, commit=False, **fields)
+            conn.commit()
+            db.touch_show_refreshed(conn, show_id)
+            episodes = len(db.list_episodes(conn, show_id))
+            self.send_json({"ok": True, "show_id": show_id,
+                            "episodes": episodes, "skipped": skipped})
 
         def api_episode_watch(self, episode_id: str, action: str):
             conn = self.conn()

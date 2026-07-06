@@ -1,0 +1,65 @@
+{
+  "id": 82,
+  "url": "https://www.tvmaze.com/shows/82/game-of-thrones",
+  "name": "Game of Thrones",
+  "type": "Scripted",
+  "status": "Ended",
+  "runtime": 60,
+  "averageRuntime": 61,
+  "premiered": "2011-04-17",
+  "ended": "2019-05-19",
+  "image": {
+    "medium": "https://static.tvmaze.com/uploads/images/medium_portrait/498/1245274.jpg",
+    "original": "https://static.tvmaze.com/uploads/images/original_untouched/498/1245274.jpg"
+  },
+  "externals": { "tvrage": 24493, "thetvdb": 121361, "imdb": "tt0944947" },
+  "_embedded": {
+    "episodes": [
+      {
+        "id": 4952,
+        "name": "Winter Is Coming",
+        "season": 1,
+        "number": 1,
+        "type": "regular",
+        "airdate": "2011-04-17",
+        "runtime": 60
+      },
+      {
+        "id": 4953,
+        "name": "The Kingsroad",
+        "season": 1,
+        "number": 2,
+        "type": "regular",
+        "airdate": "2011-04-24",
+        "runtime": 60
+      },
+      {
+        "id": 4954,
+        "name": "Lord Snow",
+        "season": 1,
+        "number": 3,
+        "type": "regular",
+        "airdate": "2011-05-01",
+        "runtime": 60
+      },
+      {
+        "id": 999999,
+        "name": "Special With No Number",
+        "season": 1,
+        "number": null,
+        "type": "insignificant_special",
+        "airdate": "2011-06-01",
+        "runtime": 30
+      },
+      {
+        "id": 4955,
+        "name": "Announced But Unscheduled",
+        "season": 2,
+        "number": 1,
+        "type": "regular",
+        "airdate": "",
+        "runtime": null
+      }
+    ]
+  }
+}
