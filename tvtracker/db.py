@@ -546,6 +546,28 @@ def resolve_staging_row(
 
 
 # ---------------------------------------------------------------------------
+# Stats source rows (aggregation logic lives in tvtracker/stats.py)
+# ---------------------------------------------------------------------------
+
+def watched_episode_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """One row per watched episode with everything stats needs: the episode's
+    own runtime, the show's runtime (fallback), show identity, and watch time.
+    """
+    return conn.execute(
+        """
+        SELECT e.watched_at,
+               e.runtime_min      AS episode_runtime_min,
+               s.runtime_min      AS show_runtime_min,
+               s.id               AS show_id,
+               s.name             AS show_name
+        FROM episodes e
+        JOIN shows s ON s.id = e.show_id
+        WHERE e.watched_at IS NOT NULL
+        """
+    ).fetchall()
+
+
+# ---------------------------------------------------------------------------
 # Meta
 # ---------------------------------------------------------------------------
 

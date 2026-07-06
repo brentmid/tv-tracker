@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tvtracker import db, tmdb, tvmaze  # noqa: E402
+from tvtracker import db, stats, tmdb, tvmaze  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_DB_PATH = REPO_ROOT / "baselines" / "tvtracker.db"
@@ -113,6 +113,7 @@ def make_handler(
             (re.compile(r"^/archive$"), "page_archive"),
             (re.compile(r"^/add$"), "page_add"),
             (re.compile(r"^/movies$"), "page_movies"),
+            (re.compile(r"^/stats$"), "page_stats"),
             (re.compile(r"^/api/search/shows$"), "api_search_shows"),
             (re.compile(r"^/api/search/movies$"), "api_search_movies"),
             (re.compile(r"^/healthz$"), "api_healthz"),
@@ -384,6 +385,50 @@ def make_handler(
   <button onclick="act('/api/movies/{m['id']}/unwatch')" title="back to watchlist">↩</button>"""))
 
             self.send_html(render_page("Movies", "\n".join(parts), active_nav="movies"))
+
+        def page_stats(self):
+            data = stats.compute_stats(self.conn())
+            parts = [f"""\
+<h1>Stats</h1>
+<div class="card"><div class="grow">
+  <div class="title">{data["episodes_watched"]:,} episodes
+   · {data["shows_with_watches"]} shows
+   · {data["movies_watched"]} movies</div>
+  <div class="sub">TV time {stats.fmt_hours(data["tv_minutes"])}
+   · movie time {stats.fmt_hours(data["movie_minutes"])}</div>
+</div></div>"""]
+            notes = []
+            if data["fallback_episode_count"]:
+                notes.append(
+                    f"{data['fallback_episode_count']:,} episodes had no runtime "
+                    f"on record and were counted as {stats.EPISODE_FALLBACK_MIN} min")
+            if data["movies_without_runtime"]:
+                notes.append(
+                    f"{data['movies_without_runtime']} watched movies have no "
+                    f"runtime on record and add no movie time")
+            if notes:
+                parts.append(f'<p class="muted">{html.escape("; ".join(notes))}.</p>')
+
+            if data["top_shows"]:
+                parts.append("<h2>Top shows by hours</h2>")
+                for i, entry in enumerate(data["top_shows"], 1):
+                    parts.append(f"""\
+<div class="card"><div class="grow">
+  <div class="title">{i}. {html.escape(entry["name"])}</div>
+  <div class="sub">{stats.fmt_hours(entry["minutes"])} · {entry["episodes"]} episodes</div>
+</div></div>""")
+
+            if data["per_year"]:
+                parts.append("<h2>By year</h2>")
+                for entry in data["per_year"]:
+                    parts.append(f"""\
+<div class="card"><div class="grow">
+  <div class="title">{entry["year"]}</div>
+  <div class="sub">{entry["episodes"]} episodes · {stats.fmt_hours(entry["minutes"])}
+   · {entry["movies"]} movies</div>
+</div></div>""")
+
+            self.send_html(render_page("Stats", "\n".join(parts), active_nav="stats"))
 
         def api_search_movies(self):
             query = (self.query.get("q") or [""])[0].strip()
