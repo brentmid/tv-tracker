@@ -66,6 +66,7 @@ PAGE_TEMPLATE = Template("""\
 <nav class="topnav">
   <a href="/" class="$nav_queue">Queue</a>
   <a href="/not-started" class="$nav_notstarted">Not started</a>
+  <a href="/finished" class="$nav_finished">Finished</a>
   <a href="/add" class="$nav_add">Add</a>
   <a href="/archive" class="$nav_archive">Archive</a>
   <a href="/movies" class="$nav_movies">Movies</a>
@@ -85,7 +86,7 @@ $content
 </html>
 """)
 
-NAV_ITEMS = ("queue", "notstarted", "add", "archive", "movies", "stats")
+NAV_ITEMS = ("queue", "notstarted", "finished", "add", "archive", "movies", "stats")
 
 
 def render_page(title: str, content: str, active_nav: str = "") -> str:
@@ -139,6 +140,7 @@ def make_handler(
             (re.compile(r"^/$"), "page_queue"),
             (re.compile(r"^/show/(\d+)$"), "page_show"),
             (re.compile(r"^/not-started$"), "page_not_started"),
+            (re.compile(r"^/finished$"), "page_finished"),
             (re.compile(r"^/archive$"), "page_archive"),
             (re.compile(r"^/add$"), "page_add"),
             (re.compile(r"^/movies$"), "page_movies"),
@@ -367,9 +369,34 @@ def make_handler(
 </div>""")
             self.send_html(render_page(show["name"], "\n".join(parts)))
 
+        def page_finished(self):
+            rows = db.finished(self.conn())
+            parts = [f"""\
+<h1>Finished</h1>
+<p class="muted">{len(rows)} shows fully watched, nothing scheduled ·
+ new episodes move a show back to the queue automatically</p>
+<p><input type="search" placeholder="Filter shows…"
+   oninput="filterCards(this.value)"></p>"""]
+            if not rows:
+                parts.append('<p class="muted">Nothing finished yet.</p>')
+            for row in rows:
+                name = html.escape(row["name"])
+                finished_on = (row["last_watched_at"] or "")[:10] or "?"
+                parts.append(f"""\
+<div class="card">
+  <div class="grow">
+    <div class="title"><a href="/show/{row['id']}">{name}</a></div>
+    <div class="sub">{row["episode_count"]} episodes · finished {finished_on}</div>
+  </div>
+</div>""")
+            self.send_html(render_page("Finished", "\n".join(parts),
+                                       active_nav="finished"))
+
         def page_archive(self):
             shows = db.list_shows(self.conn(), "archived")
-            parts = ["<h1>Archive</h1>"]
+            parts = ["<h1>Archive</h1>",
+                     '<p class="muted">Shows you stopped watching. '
+                     'Fully-watched shows live in Finished instead.</p>']
             if not shows:
                 parts.append('<p class="muted">No archived shows.</p>')
             for show in shows:

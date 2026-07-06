@@ -253,6 +253,66 @@ def test_queue_earliest_by_season_number_not_airdate(conn):
     assert (queue[0]["episode_season"], queue[0]["episode_number"]) == (1, 1)
 
 
+def test_finished_derivation_and_transitions(conn):
+    sid = add_show(conn, 1, "Mini Series")
+    e1 = add_ep(conn, sid, 100, 1, 1, airdate="2020-01-01",
+                watched_at="2020-01-02T00:00:00+00:00")
+    e2 = add_ep(conn, sid, 101, 1, 2, airdate="2020-01-08")
+    assert db.finished(conn) == []            # one episode still unwatched
+
+    # watching the last episode finishes the show
+    db.set_episode_watched(conn, e2, True, "2020-01-09T00:00:00+00:00")
+    rows = db.finished(conn)
+    assert [r["name"] for r in rows] == ["Mini Series"]
+    assert rows[0]["episode_count"] == 2
+    assert rows[0]["last_watched_at"] == "2020-01-09T00:00:00+00:00"
+    queue, waiting = db.watch_next(conn, as_of=TODAY)
+    assert not queue and not waiting          # finished -> nowhere else
+
+    # a refresh bringing a new episode un-finishes it (back to waiting/queue)
+    db.upsert_episode(conn, show_id=sid, tvmaze_episode_id=102, season=2,
+                      number=1, airdate="2099-06-01")
+    assert db.finished(conn) == []
+    _, waiting = db.watch_next(conn, as_of=TODAY)
+    assert [w["name"] for w in waiting] == ["Mini Series"]  # Ted Lasso case
+
+    # unwatching also un-finishes
+    db.set_episode_watched(conn, e2, True, "2020-01-09T00:00:00+00:00")
+    conn.execute("DELETE FROM episodes WHERE tvmaze_episode_id = 102")
+    conn.commit()
+    assert len(db.finished(conn)) == 1
+    db.set_episode_watched(conn, e2, False)
+    assert db.finished(conn) == []
+
+
+def test_finished_excludes_archived_and_ignores_showless_episodes(conn):
+    sid = add_show(conn, 1, "Done But Abandoned")
+    add_ep(conn, sid, 100, 1, 1, airdate="2020-01-01",
+           watched_at="2020-01-02T00:00:00+00:00")
+    db.set_show_status(conn, sid, "archived")
+    assert db.finished(conn) == []
+    empty = add_show(conn, 2, "No Episodes Cached")
+    assert db.finished(conn) == []            # zero episodes != finished
+    assert empty  # silence unused warning
+
+
+def test_unarchive_fully_watched_migration(conn):
+    done = add_show(conn, 1, "Watched Everything")
+    add_ep(conn, done, 100, 1, 1, airdate="2020-01-01",
+           watched_at="2020-01-02T00:00:00+00:00")
+    db.set_show_status(conn, done, "archived")
+    partial = add_show(conn, 2, "Gave Up Midway")
+    add_ep(conn, partial, 200, 1, 1, airdate="2020-01-01",
+           watched_at="2020-01-02T00:00:00+00:00")
+    add_ep(conn, partial, 201, 1, 2, airdate="2020-01-08")
+    db.set_show_status(conn, partial, "archived")
+
+    assert db.unarchive_fully_watched(conn) == 1
+    assert db.get_show(conn, done)["status"] == "active"
+    assert db.get_show(conn, partial)["status"] == "archived"  # stays archived
+    assert [r["name"] for r in db.finished(conn)] == ["Watched Everything"]
+
+
 def test_not_started_sorted_by_latest_airdate_desc(conn):
     a = add_show(conn, 1, "Old Finished Show")
     add_ep(conn, a, 100, 1, 1, airdate="2010-01-01")

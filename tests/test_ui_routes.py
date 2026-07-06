@@ -179,9 +179,11 @@ def test_watch_all_marks_everything_even_unaired(srv):
     conn = db.connect(db_path)
     assert all(e["watched_at"] for e in db.list_episodes(conn, ids["show"]))
     conn.close()
-    # fully-watched show leaves the queue entirely
-    page = get_html(base + "/")
-    assert "Alpha &amp; Sons" not in page
+    # fully-watched show leaves the queue and lands on Finished
+    assert "Alpha &amp; Sons" not in get_html(base + "/")
+    page = get_html(base + "/finished")
+    assert "Alpha &amp; Sons" in page
+    assert "3 episodes" in page
 
 
 def test_archive_removes_from_queue_unarchive_restores(srv):

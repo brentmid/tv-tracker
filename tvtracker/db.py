@@ -436,6 +436,50 @@ def not_started(
     ).fetchall()
 
 
+def finished(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Active shows with every known episode watched — the "Finished" tab.
+
+    Derived state, deliberately not stored: watching the last episode makes
+    a show finished; a refresh that brings new episodes (or an unwatch)
+    un-finishes it automatically. Shows with unaired-but-scheduled episodes
+    have unwatched rows, so they land in the queue's waiting section, not
+    here. Archived shows never appear (archive = gave up, finished = done).
+    Sorted by most recently finished (last watch) first.
+    """
+    return conn.execute(
+        """
+        SELECT s.*,
+               (SELECT COUNT(*) FROM episodes e
+                 WHERE e.show_id = s.id) AS episode_count,
+               (SELECT MAX(e2.watched_at) FROM episodes e2
+                 WHERE e2.show_id = s.id) AS last_watched_at
+        FROM shows s
+        WHERE s.status = 'active'
+          AND EXISTS (SELECT 1 FROM episodes e WHERE e.show_id = s.id)
+          AND NOT EXISTS (SELECT 1 FROM episodes e
+                           WHERE e.show_id = s.id AND e.watched_at IS NULL)
+        ORDER BY last_watched_at DESC, s.name COLLATE NOCASE
+        """
+    ).fetchall()
+
+
+def unarchive_fully_watched(conn: sqlite3.Connection) -> int:
+    """One-time migration helper: archived shows with zero unwatched
+    episodes become active so they derive as finished. Returns count."""
+    cur = conn.execute(
+        """
+        UPDATE shows SET status = 'active'
+        WHERE status = 'archived'
+          AND EXISTS (SELECT 1 FROM episodes e WHERE e.show_id = shows.id)
+          AND NOT EXISTS (SELECT 1 FROM episodes e
+                           WHERE e.show_id = shows.id
+                             AND e.watched_at IS NULL)
+        """
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 # ---------------------------------------------------------------------------
 # Movies
 # ---------------------------------------------------------------------------
