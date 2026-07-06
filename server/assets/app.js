@@ -24,6 +24,18 @@ async function act(url, body) {
     location.reload();
 }
 
+// Refresh buttons can take a while (rate-limited TVmaze calls) — show
+// progress on the button itself, then reload.
+async function refreshBtn(url, btn) {
+    btn.disabled = true;
+    btn.textContent = "Refreshing…";
+    try {
+        await post(url);
+    } finally {
+        location.reload();
+    }
+}
+
 // -- /add page ------------------------------------------------------------
 
 function esc(s) {

@@ -104,6 +104,26 @@ def make_handler(
     tvm = tvmaze_client or tvmaze.TVMazeClient()
     tmdbc = tmdb_client or tmdb.TMDBClient()  # key resolved lazily on first use
 
+    def sync_show_from_tvmaze(conn, tvmaze_id: int) -> dict | None:
+        """Fetch a show + episodes from TVmaze and upsert everything.
+        Used by add-show and refresh; watch state survives (db upserts
+        never clobber watched_at / show status). None if TVmaze 404s."""
+        show = tvm.show_with_episodes(tvmaze_id)
+        if show is None:
+            return None
+        show_id = db.upsert_show(conn, **tvmaze.show_fields(show))
+        count = skipped = 0
+        for ep in tvmaze.embedded_episodes(show):
+            fields = tvmaze.episode_fields(ep)
+            if fields is None:
+                skipped += 1
+                continue
+            db.upsert_episode(conn, show_id=show_id, commit=False, **fields)
+            count += 1
+        conn.commit()
+        db.touch_show_refreshed(conn, show_id)
+        return {"show_id": show_id, "episodes": count, "skipped": skipped}
+
     class Handler(BaseHTTPRequestHandler):
         # Routes are (compiled regex, method name). The first match wins;
         # regex groups become positional args to the method.
@@ -127,6 +147,8 @@ def make_handler(
             (re.compile(r"^/api/shows/(\d+)/(archive|unarchive)$"), "api_show_archive"),
             (re.compile(r"^/api/movies$"), "api_add_movie"),
             (re.compile(r"^/api/movies/(\d+)/(watch|unwatch|delete)$"), "api_movie_action"),
+            (re.compile(r"^/api/shows/(\d+)/refresh$"), "api_refresh_show"),
+            (re.compile(r"^/api/refresh-all$"), "api_refresh_all"),
         ]
 
         # -- plumbing ------------------------------------------------------
@@ -195,8 +217,15 @@ def make_handler(
         # -- routes ----------------------------------------------------------
 
         def page_queue(self):
-            queue, waiting = db.watch_next(self.conn())
-            parts = ["<h1>Watch Next</h1>"]
+            conn = self.conn()
+            queue, waiting = db.watch_next(conn)
+            last_refresh = db.get_meta(conn, "last_refresh_all")
+            last_txt = (f"air dates refreshed {html.escape(last_refresh[:16])}Z"
+                        if last_refresh else "air dates never refreshed")
+            parts = [f"""\
+<h1>Watch Next</h1>
+<p class="muted">{last_txt} ·
+  <button onclick="refreshBtn('/api/refresh-all', this)">Refresh all</button></p>"""]
             if not queue and not waiting:
                 parts.append(
                     '<p class="muted">Nothing here yet — '
@@ -249,6 +278,8 @@ def make_handler(
 <p>
   <button onclick="act('/api/shows/{show['id']}/{arch_action}')">{arch_action.title()}</button>
   <button onclick="act('/api/shows/{show['id']}/watch-all')">Mark all watched</button>
+  {"" if archived else
+   f"<button onclick=\"refreshBtn('/api/shows/{show['id']}/refresh', this)\">Refresh</button>"}
 </p>"""]
             season = None
             for ep in episodes:
@@ -326,27 +357,14 @@ def make_handler(
                 self.send_json({"error": "tvmaze_id (int) required"}, 400)
                 return
             try:
-                show = tvm.show_with_episodes(tvmaze_id)
+                result = sync_show_from_tvmaze(self.conn(), tvmaze_id)
             except tvmaze.TVMazeError as e:
                 self.send_json({"error": str(e)}, 502)
                 return
-            if show is None:
+            if result is None:
                 self.send_json({"error": f"no TVmaze show {tvmaze_id}"}, 404)
                 return
-            conn = self.conn()
-            show_id = db.upsert_show(conn, **tvmaze.show_fields(show))
-            skipped = 0
-            for ep in tvmaze.embedded_episodes(show):
-                fields = tvmaze.episode_fields(ep)
-                if fields is None:
-                    skipped += 1
-                    continue
-                db.upsert_episode(conn, show_id=show_id, commit=False, **fields)
-            conn.commit()
-            db.touch_show_refreshed(conn, show_id)
-            episodes = len(db.list_episodes(conn, show_id))
-            self.send_json({"ok": True, "show_id": show_id,
-                            "episodes": episodes, "skipped": skipped})
+            self.send_json({"ok": True, **result})
 
         def page_movies(self):
             conn = self.conn()
@@ -484,6 +502,44 @@ def make_handler(
             else:
                 db.set_movie_watched(conn, int(movie_id), action == "watch")
             self.send_json({"ok": True})
+
+        def api_refresh_show(self, show_id: str):
+            conn = self.conn()
+            show = db.get_show(conn, int(show_id))
+            if show is None:
+                self.send_json({"error": "no such show"}, 404)
+                return
+            if show["status"] == "archived":
+                self.send_json({"error": "archived shows are frozen — "
+                                         "unarchive to refresh"}, 409)
+                return
+            try:
+                result = sync_show_from_tvmaze(conn, show["tvmaze_id"])
+            except tvmaze.TVMazeError as e:
+                self.send_json({"error": str(e)}, 502)
+                return
+            if result is None:
+                self.send_json({"error": "show vanished from TVmaze"}, 502)
+                return
+            self.send_json({"ok": True, **result})
+
+        def api_refresh_all(self):
+            conn = self.conn()
+            refreshed, errors = [], []
+            for show in db.list_shows(conn, "active"):
+                try:
+                    result = sync_show_from_tvmaze(conn, show["tvmaze_id"])
+                except tvmaze.TVMazeError as e:
+                    errors.append({"show": show["name"], "error": str(e)})
+                    continue
+                if result is None:
+                    errors.append({"show": show["name"],
+                                   "error": "gone from TVmaze"})
+                    continue
+                refreshed.append(show["name"])
+            db.set_meta(conn, "last_refresh_all", db.utcnow())
+            self.send_json({"ok": not errors, "refreshed": len(refreshed),
+                            "errors": errors})
 
         def api_episode_watch(self, episode_id: str, action: str):
             conn = self.conn()
