@@ -12,7 +12,7 @@ TV Time (Whip Media) announced 2026-07-01 that the app shuts down **2026-07-15**
 
 ## Decisions (Brent, 2026-07-06)
 
-1. **Export file**: ARRIVED — `~/bin/gdpr-data.zip` (601 KB, 52 CSVs), inspected 2026-07-06 (extraction in session scratchpad, delete after use). **M0 must move it to `tv-tracker/baselines/import/gdpr-data.zip` immediately**: the zip contains `access_token.csv`, `refresh_token.csv`, `ip_address.csv` etc., its current `~/bin` root location is NOT covered by the Dropbox-rsync excludes (verified: no matching pattern, and NOT yet mirrored to `~/Dropbox/<hostname>-bin/` as of inspection). `baselines/` is already excluded. Importer stays M9 (last), but is now designed against the REAL format (see "Real export format" below).
+1. **Export file**: ARRIVED — `~/bin/gdpr-data.zip` (601 KB, 52 CSVs), inspected 2026-07-06 (extraction in session scratchpad, delete after use). **M0 must move it to `tv-tracker/baselines/import/gdpr-data.zip` immediately**: the zip contains `access_token.csv`, `refresh_token.csv`, `ip_address.csv` etc., its current `~/bin` root location is NOT covered by the Dropbox-rsync excludes (verified: no matching pattern, and NOT yet mirrored to the `~/Dropbox/` rsync target as of inspection). `baselines/` is already excluded. Importer stays M9 (last), but is now designed against the REAL format (see "Real export format" below).
 2. **Access**: bind localhost + Tailscale IP (portfolio-agent pattern). Plain HTTP; tailnet is the access control. Never 0.0.0.0.
 3. **Metadata**: TVmaze (free, keyless) for TV; TMDB (free key — **Brent registers when online**) for movies.
 4. **Air-date refresh**: manual button for MVP; daily LaunchAgent (TVmaze `/updates/shows` feed) is post-MVP.

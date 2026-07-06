@@ -38,9 +38,13 @@ A personal, self-hosted replacement for the TV Time app (shut down 2026-07-15). 
 
 `.git/hooks/pre-commit` → symlink to `scripts/pre-commit-check.sh`. Rejects staged gitignore-matched files, credential-ish filenames, TMDB-key/JWT-looking strings in diffs, references to the sensitive GDPR files, and runs the offline test suite. **If the hook blocks a commit, fix the issue — never bypass with `--no-verify`.**
 
+### Keep commits public-clean as we go
+
+The publishable-from-day-one rule covers **docs too**, not just code. Never commit personal infrastructure details: Tailscale IPs (use `<tailscale-ip>`), machine hostnames, LAN topology, Dropbox folder names, or anything else that describes Brent's environment rather than this project. History was scrubbed once with `git filter-repo` on 2026-07-06 (Tailscale IP + hostname had leaked into docs) and every commit re-signed — write commits so it never has to happen again, because after the repo is pushed a rewrite stops being an option.
+
 ### Before promoting to public
 
-`gitleaks detect` over full history; grep `git log -p` for key/token patterns; manual review of every tracked file and every fixture.
+`gitleaks git` over full history (verified clean 2026-07-06); grep `git log -p` for key/token patterns; manual review of every tracked file and every fixture.
 
 ## Model selection
 
