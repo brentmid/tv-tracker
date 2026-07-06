@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>net.midwood.tv-tracker.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOUR_USER/bin/tv-tracker/.venv/bin/python</string>
+        <string>/Users/YOUR_USER/bin/tv-tracker/server/server.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TV_TRACKER_BIND</key>
+        <string>YOUR_TAILSCALE_IP</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USER/bin/tv-tracker/baselines/logs/server-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USER/bin/tv-tracker/baselines/logs/server-stderr.log</string>
+</dict>
+</plist>
