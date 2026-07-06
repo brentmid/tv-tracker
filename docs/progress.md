@@ -34,7 +34,7 @@ Living checklist. **Update after every work chunk** — this file (plus `docs/pl
   - [ ] **Brent's manual tail**: resolve/skip the 97 staged movie groups at `/import` (link to TMDB or skip).
   - [ ] Note for Brent: queue holds 363 shows — TV Time counted 476 shows as "followed", so old abandoned shows sit in the queue with unwatched aired episodes. Archive from the UI as encountered (or we bulk-archive by a rule, e.g. no watch in N years, if asked).
 - [x] **Published to GitHub 2026-07-06**: public repo `brentmid/tv-tracker` (Brent upgraded the plan from private to public; pre-publication sweep passed — gitleaks clean over full history, no infra/personal details, README + MIT LICENSE added)
-- [ ] M10 Post-MVP (file as GitHub issues): daily-refresh LaunchAgent, sqlite backup script, rewatch support
+- [x] M10 Post-MVP filed as GitHub issues (2026-07-06): [#1](https://github.com/brentmid/tv-tracker/issues/1) daily-refresh LaunchAgent · [#2](https://github.com/brentmid/tv-tracker/issues/2) nightly sqlite backup · [#3](https://github.com/brentmid/tv-tracker/issues/3) rewatch support. GitHub Issues now canonical.
 
 ## Waiting on Brent
 
