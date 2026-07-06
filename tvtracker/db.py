@@ -173,10 +173,16 @@ def get_show_by_tvmaze_id(conn: sqlite3.Connection, tvmaze_id: int) -> sqlite3.R
 
 
 def list_shows(conn: sqlite3.Connection, status: str | None = None) -> list[sqlite3.Row]:
+    sql = """
+        SELECT s.*,
+               (SELECT MAX(e.watched_at) FROM episodes e
+                 WHERE e.show_id = s.id) AS last_watched_at
+        FROM shows s
+    """
     if status is None:
-        return conn.execute("SELECT * FROM shows ORDER BY name COLLATE NOCASE").fetchall()
+        return conn.execute(sql + " ORDER BY name COLLATE NOCASE").fetchall()
     return conn.execute(
-        "SELECT * FROM shows WHERE status = ? ORDER BY name COLLATE NOCASE", (status,)
+        sql + " WHERE s.status = ? ORDER BY name COLLATE NOCASE", (status,)
     ).fetchall()
 
 

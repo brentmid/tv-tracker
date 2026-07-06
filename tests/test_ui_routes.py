@@ -99,6 +99,7 @@ def test_queue_page_shows_next_episode_and_waiting_section(srv):
     page = get_html(base + "/")
     assert "Alpha &amp; Sons" in page
     assert "S01E02" in page                       # next unwatched aired
+    assert "last watched 20" in page              # watch date on the card
     assert "Alpha &amp; Sons" not in get_html(base + "/not-started")
 
 
@@ -120,12 +121,17 @@ def test_show_page_404_for_unknown_id(srv):
 
 
 def test_archive_page_empty_then_lists_archived(srv):
-    base, _, ids = srv
+    base, db_path, ids = srv
     assert "No archived shows" in get_html(base + "/archive")
     post(base + f"/api/shows/{ids['show']}/archive")
     page = get_html(base + "/archive")
     assert "Alpha &amp; Sons" in page
     assert f"/api/shows/{ids['show']}/unarchive" in page
+    assert "never watched" in page                # no episodes seen yet
+    conn = db.connect(db_path)
+    db.set_episode_watched(conn, ids["e1"], True, "2024-04-04T20:00:00+00:00")
+    conn.close()
+    assert "last watched 2024-04-04" in get_html(base + "/archive")
 
 
 # ---------------------------------------------------------------------------

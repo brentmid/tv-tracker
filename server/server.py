@@ -269,11 +269,13 @@ def make_handler(
                 ep_name = html.escape(row["episode_name"] or "")
                 more = row["unwatched_aired_count"] - 1
                 more_txt = f" · +{more} more" if more > 0 else ""
+                last_txt = (f" · last watched {row['last_watched_at'][:10]}"
+                            if row["last_watched_at"] else "")
                 parts.append(f"""\
 <div class="card">
   <div class="grow">
     <div class="title"><a href="/show/{row['id']}">{name}</a></div>
-    <div class="sub">{ep_label} · {ep_name} · {row['episode_airdate']}{more_txt}</div>
+    <div class="sub">{ep_label} · {ep_name} · {row['episode_airdate']}{more_txt}{last_txt}</div>
   </div>
   <button class="primary" onclick="act('/api/episodes/{row['episode_id']}/watch')">✓</button>
 </div>""")
@@ -401,9 +403,14 @@ def make_handler(
                 parts.append('<p class="muted">No archived shows.</p>')
             for show in shows:
                 name = html.escape(show["name"])
+                last_txt = (f"last watched {show['last_watched_at'][:10]}"
+                            if show["last_watched_at"] else "never watched")
                 parts.append(f"""\
 <div class="card">
-  <div class="grow"><div class="title"><a href="/show/{show['id']}">{name}</a></div></div>
+  <div class="grow">
+    <div class="title"><a href="/show/{show['id']}">{name}</a></div>
+    <div class="sub">{last_txt}</div>
+  </div>
   <button onclick="act('/api/shows/{show['id']}/unarchive')">Unarchive</button>
 </div>""")
             self.send_html(render_page("Archive", "\n".join(parts), active_nav="archive"))
