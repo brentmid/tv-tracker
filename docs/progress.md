@@ -33,7 +33,8 @@ Living checklist. **Update after every work chunk** — this file (plus `docs/pl
   - [x] The Borgias (0 export watch rows, Brent watched it all): all 29 episodes marked watched (import-time timestamps — original dates unknown), left active per export follow state; fully-watched so it's out of the queue.
   - [ ] **Brent's manual tail**: resolve/skip the 97 staged movie groups at `/import` (link to TMDB or skip).
   - [ ] Note for Brent: queue holds 363 shows — TV Time counted 476 shows as "followed", so old abandoned shows sit in the queue with unwatched aired episodes. Archive from the UI as encountered (or we bulk-archive by a rule, e.g. no watch in N years, if asked).
-- [ ] M10 Post-MVP (file as GitHub issues when repo is pushed): daily-refresh LaunchAgent, sqlite backup script, GitHub private repo push, rewatch support
+- [x] **Published to GitHub 2026-07-06**: public repo `brentmid/tv-tracker` (Brent upgraded the plan from private to public; pre-publication sweep passed — gitleaks clean over full history, no infra/personal details, README + MIT LICENSE added)
+- [ ] M10 Post-MVP (file as GitHub issues): daily-refresh LaunchAgent, sqlite backup script, rewatch support
 
 ## Waiting on Brent
 

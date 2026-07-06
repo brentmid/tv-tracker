@@ -59,4 +59,4 @@ No `claude -p` / Agent SDK usage in this project (the server is plain Python; me
 
 ## Issue tracking
 
-Not on GitHub yet (built offline on a plane). Post-MVP work is listed in `docs/progress.md` under M10 until the repo is pushed to a private GitHub repo (`gh repo create brentmid/tv-tracker --private`); after that, GitHub Issues is canonical, same label convention as sibling repos (`feature`, `chore`, `bug`, `architecture`, `epic`, `spec`).
+**Public GitHub repo: `brentmid/tv-tracker`** (published 2026-07-06). GitHub Issues is canonical, same label convention as sibling repos (`feature`, `chore`, `bug`, `architecture`, `epic`, `spec`). Remaining M10 items in `docs/progress.md` should be filed as issues.
