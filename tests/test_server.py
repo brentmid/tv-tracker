@@ -77,6 +77,26 @@ def test_assets_served_with_content_type(srv):
     assert ctype == "application/javascript; charset=utf-8"
 
 
+def test_home_screen_app_assets(srv):
+    base, _ = srv
+    code, ctype, body = get(base + "/assets/apple-touch-icon.png")
+    assert code == 200
+    assert ctype == "image/png"
+    assert body.startswith(b"\x89PNG")
+    code, ctype, _ = get(base + "/assets/favicon.svg")
+    assert (code, ctype) == (200, "image/svg+xml")
+    code, ctype, body = get(base + "/assets/manifest.webmanifest")
+    assert (code, ctype) == (200, "application/manifest+json")
+    manifest = json.loads(body)
+    assert manifest["display"] == "standalone"
+    assert manifest["icons"][0]["src"] == "/assets/apple-touch-icon.png"
+
+    page = get(base + "/")[2].decode()
+    for tag in ('rel="apple-touch-icon"', 'rel="manifest"',
+                'rel="icon"', 'apple-mobile-web-app-capable'):
+        assert tag in page
+
+
 @pytest.mark.parametrize("path", [
     "/nope",
     "/assets/missing.css",
