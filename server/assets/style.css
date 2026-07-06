@@ -72,6 +72,22 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 .card .grow { flex: 1; min-width: 0; }
+
+.card .poster {
+    width: 44px;
+    height: 62px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: var(--surface-2);
+    flex-shrink: 0;
+}
+
+.card .poster.ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+}
 .card .title { font-weight: 600; }
 .card .sub { color: var(--muted); font-size: 0.875rem; }
 

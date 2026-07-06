@@ -89,6 +89,15 @@ $content
 NAV_ITEMS = ("queue", "notstarted", "finished", "add", "archive", "movies", "stats")
 
 
+def poster_img(url: str | None, placeholder: str = "📺") -> str:
+    """Poster thumbnail for a card. Images come straight from the TVmaze/
+    TMDB CDNs cached at add/import time — zero API calls; lazy-loaded so
+    long lists only fetch what scrolls into view."""
+    if not url:
+        return f'<div class="poster ph">{placeholder}</div>'
+    return f'<img class="poster" src="{html.escape(url)}" alt="" loading="lazy">'
+
+
 def sort_select(base_path: str, labels: list[tuple[str, str]], current: str) -> str:
     """A <select> that reloads the page with ?sort=<value> on change."""
     options = "".join(
@@ -284,6 +293,7 @@ def make_handler(
                     last_txt += f" · {row['watched_pct']:.0f}% watched"
                 parts.append(f"""\
 <div class="card">
+  {poster_img(row["image_url"])}
   <div class="grow">
     <div class="title"><a href="/show/{row['id']}">{name}</a></div>
     <div class="sub">{ep_label} · {ep_name} · {row['episode_airdate']}{more_txt}{last_txt}</div>
@@ -298,6 +308,7 @@ def make_handler(
                                 if row["next_airdate"] else "no airdate announced")
                     parts.append(f"""\
 <div class="card">
+  {poster_img(row["image_url"])}
   <div class="grow">
     <div class="title"><a href="/show/{row['id']}">{name}</a></div>
     <div class="sub">{next_txt}</div>
@@ -330,6 +341,7 @@ def make_handler(
                 latest = row["latest_airdate"] or "no date"
                 parts.append(f"""\
 <div class="card">
+  {poster_img(row["image_url"])}
   <div class="grow">
     <div class="title"><a href="/show/{row['id']}">{name}</a></div>
     <div class="sub">latest episode {latest} · {row['aired_count']} aired
@@ -353,7 +365,10 @@ def make_handler(
             arch_action = "unarchive" if archived else "archive"
             watched_count = sum(1 for e in episodes if e["watched_at"])
             parts = [f"""\
-<h1>{name}</h1>
+<div class="card" style="background:none;padding:0">
+  {poster_img(show["image_url"])}
+  <div class="grow"><h1 style="margin:0">{name}</h1></div>
+</div>
 <p class="muted">{html.escape(show["tvmaze_status"] or "")}
  · {watched_count}/{len(episodes)} watched{" · ARCHIVED" if archived else ""}</p>
 <p>
@@ -405,6 +420,7 @@ def make_handler(
                 finished_on = (row["last_watched_at"] or "")[:10] or "?"
                 parts.append(f"""\
 <div class="card">
+  {poster_img(row["image_url"])}
   <div class="grow">
     <div class="title"><a href="/show/{row['id']}">{name}</a></div>
     <div class="sub">{row["episode_count"]} episodes · finished {finished_on}</div>
@@ -437,6 +453,7 @@ def make_handler(
                            if show["watched_pct"] is not None else "")
                 parts.append(f"""\
 <div class="card">
+  {poster_img(show["image_url"])}
   <div class="grow">
     <div class="title"><a href="/show/{show['id']}">{name}</a></div>
     <div class="sub">{pct_txt}{last_txt}</div>
@@ -508,6 +525,7 @@ def make_handler(
                            if m["status"] == "watched" and m["watched_at"] else "")
                 return f"""\
 <div class="card">
+  {poster_img(m["poster_url"], "🎬")}
   <div class="grow">
     <div class="title">{title}{year}</div>
     <div class="sub">{m["status"]}{runtime}{watched}</div>
