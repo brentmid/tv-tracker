@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tvtracker import db, tvmaze  # noqa: E402
+from tvtracker import db, tmdb, tvmaze  # noqa: E402
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_DB_PATH = REPO_ROOT / "baselines" / "tvtracker.db"
@@ -96,11 +96,13 @@ def make_handler(
     db_path: str | Path = DEFAULT_DB_PATH,
     assets_dir: Path = ASSETS_DIR,
     tvmaze_client: tvmaze.TVMazeClient | None = None,
+    tmdb_client: tmdb.TMDBClient | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """Build a Handler class closed over its dependencies (tests inject a
-    tmp-path DB and a fixture-fed TVmaze client). One DB connection per
+    tmp-path DB and fixture-fed API clients). One DB connection per
     request, opened lazily."""
     tvm = tvmaze_client or tvmaze.TVMazeClient()
+    tmdbc = tmdb_client or tmdb.TMDBClient()  # key resolved lazily on first use
 
     class Handler(BaseHTTPRequestHandler):
         # Routes are (compiled regex, method name). The first match wins;
@@ -110,7 +112,9 @@ def make_handler(
             (re.compile(r"^/show/(\d+)$"), "page_show"),
             (re.compile(r"^/archive$"), "page_archive"),
             (re.compile(r"^/add$"), "page_add"),
+            (re.compile(r"^/movies$"), "page_movies"),
             (re.compile(r"^/api/search/shows$"), "api_search_shows"),
+            (re.compile(r"^/api/search/movies$"), "api_search_movies"),
             (re.compile(r"^/healthz$"), "api_healthz"),
             (re.compile(r"^/assets/([A-Za-z0-9._-]+)$"), "serve_asset"),
         ]
@@ -120,6 +124,8 @@ def make_handler(
             (re.compile(r"^/api/shows/(\d+)/watch-season$"), "api_watch_season"),
             (re.compile(r"^/api/shows/(\d+)/watch-all$"), "api_watch_all"),
             (re.compile(r"^/api/shows/(\d+)/(archive|unarchive)$"), "api_show_archive"),
+            (re.compile(r"^/api/movies$"), "api_add_movie"),
+            (re.compile(r"^/api/movies/(\d+)/(watch|unwatch|delete)$"), "api_movie_action"),
         ]
 
         # -- plumbing ------------------------------------------------------
@@ -340,6 +346,99 @@ def make_handler(
             episodes = len(db.list_episodes(conn, show_id))
             self.send_json({"ok": True, "show_id": show_id,
                             "episodes": episodes, "skipped": skipped})
+
+        def page_movies(self):
+            conn = self.conn()
+            watchlist = db.list_movies(conn, "watchlist")
+            watched = db.list_movies(conn, "watched")
+            parts = ["""\
+<h1>Movies</h1>
+<p><input type="search" id="q" placeholder="Search TMDB to add…"
+   onkeydown="if(event.key==='Enter')searchMovies()"></p>
+<div id="results"></div>"""]
+
+            def movie_card(m, buttons):
+                title = html.escape(m["title"])
+                year = f" ({m['year']})" if m["year"] else ""
+                runtime = f" · {m['runtime_min']} min" if m["runtime_min"] else ""
+                return f"""\
+<div class="card">
+  <div class="grow">
+    <div class="title">{title}{year}</div>
+    <div class="sub">{m["status"]}{runtime}</div>
+  </div>
+  {buttons}
+</div>"""
+
+            parts.append(f"<h2>Watchlist ({len(watchlist)})</h2>")
+            if not watchlist:
+                parts.append('<p class="muted">Nothing on the watchlist.</p>')
+            for m in watchlist:
+                parts.append(movie_card(m, f"""\
+  <button class="primary" onclick="act('/api/movies/{m['id']}/watch')">✓</button>
+  <button class="danger" onclick="act('/api/movies/{m['id']}/delete')">✕</button>"""))
+
+            parts.append(f"<h2>Watched ({len(watched)})</h2>")
+            for m in watched:
+                parts.append(movie_card(m, f"""\
+  <button onclick="act('/api/movies/{m['id']}/unwatch')" title="back to watchlist">↩</button>"""))
+
+            self.send_html(render_page("Movies", "\n".join(parts), active_nav="movies"))
+
+        def api_search_movies(self):
+            query = (self.query.get("q") or [""])[0].strip()
+            if not query:
+                self.send_json({"error": "q required"}, 400)
+                return
+            try:
+                results = tmdbc.search_movies(query)
+            except tmdb.TMDBKeyMissing as e:
+                self.send_json({"error": str(e)}, 503)
+                return
+            except tmdb.TMDBError as e:
+                self.send_json({"error": str(e)}, 502)
+                return
+            conn = self.conn()
+            trimmed = []
+            for movie in results[:20]:
+                fields = tmdb.movie_fields(movie)
+                existing = conn.execute(
+                    "SELECT 1 FROM movies WHERE tmdb_id = ?", (fields["tmdb_id"],)
+                ).fetchone()
+                fields["already_added"] = existing is not None
+                trimmed.append(fields)
+            self.send_json({"results": trimmed})
+
+        def api_add_movie(self):
+            body = self.read_json_body()
+            tmdb_id = body.get("tmdb_id")
+            if not isinstance(tmdb_id, int):
+                self.send_json({"error": "tmdb_id (int) required"}, 400)
+                return
+            try:
+                movie = tmdbc.movie(tmdb_id)  # detail call: has runtime
+            except tmdb.TMDBKeyMissing as e:
+                self.send_json({"error": str(e)}, 503)
+                return
+            except tmdb.TMDBError as e:
+                self.send_json({"error": str(e)}, 502)
+                return
+            if movie is None:
+                self.send_json({"error": f"no TMDB movie {tmdb_id}"}, 404)
+                return
+            movie_id = db.upsert_movie(self.conn(), **tmdb.movie_fields(movie))
+            self.send_json({"ok": True, "movie_id": movie_id})
+
+        def api_movie_action(self, movie_id: str, action: str):
+            conn = self.conn()
+            if db.get_movie(conn, int(movie_id)) is None:
+                self.send_json({"error": "no such movie"}, 404)
+                return
+            if action == "delete":
+                db.delete_movie(conn, int(movie_id))
+            else:
+                db.set_movie_watched(conn, int(movie_id), action == "watch")
+            self.send_json({"ok": True})
 
         def api_episode_watch(self, episode_id: str, action: str):
             conn = self.conn()

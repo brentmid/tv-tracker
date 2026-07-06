@@ -66,14 +66,16 @@ class TMDBClient:
         self,
         api_key: str | None = None,
         fetch: Fetch | None = None,
+        key_loader: Callable[[], str] = load_api_key,
     ):
         self._api_key = api_key  # lazy: only resolved on first request
         self._fetch = fetch or _default_fetch
+        self._key_loader = key_loader
 
     @property
     def api_key(self) -> str:
         if self._api_key is None:
-            self._api_key = load_api_key()
+            self._api_key = self._key_loader()
         return self._api_key
 
     def _get(self, path: str, params: str = "") -> Any:

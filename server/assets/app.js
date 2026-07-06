@@ -66,3 +66,40 @@ async function addShow(tvmazeId, btn) {
     const data = await post("/api/shows", { tvmaze_id: tvmazeId });
     location.href = `/show/${data.show_id}`;
 }
+
+// -- /movies page -----------------------------------------------------------
+
+async function searchMovies() {
+    const q = document.getElementById("q").value.trim();
+    const box = document.getElementById("results");
+    if (!q) return;
+    box.innerHTML = '<p class="muted">Searching…</p>';
+    const res = await fetch(`/api/search/movies?q=${encodeURIComponent(q)}`);
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        box.innerHTML = `<p class="muted">${esc(err.error || "Search failed.")}</p>`;
+        return;
+    }
+    const data = await res.json();
+    if (!data.results.length) {
+        box.innerHTML = '<p class="muted">No matches.</p>';
+        return;
+    }
+    box.innerHTML = data.results.map(m => `
+<div class="card">
+  ${m.poster_url ? `<img src="${esc(m.poster_url)}" alt="" width="48" style="border-radius:6px">` : ""}
+  <div class="grow">
+    <div class="title">${esc(m.title)}${m.year ? ` (${m.year})` : ""}</div>
+  </div>
+  ${m.already_added
+      ? '<span class="muted">added</span>'
+      : `<button class="primary" onclick="addMovie(${m.tmdb_id}, this)">Add</button>`}
+</div>`).join("");
+}
+
+async function addMovie(tmdbId, btn) {
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+    await post("/api/movies", { tmdb_id: tmdbId });
+    location.reload();
+}
