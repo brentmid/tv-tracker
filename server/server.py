@@ -58,6 +58,7 @@ PAGE_TEMPLATE = Template("""\
 <body>
 <nav class="topnav">
   <a href="/" class="$nav_queue">Queue</a>
+  <a href="/not-started" class="$nav_notstarted">Not started</a>
   <a href="/add" class="$nav_add">Add</a>
   <a href="/archive" class="$nav_archive">Archive</a>
   <a href="/movies" class="$nav_movies">Movies</a>
@@ -77,7 +78,7 @@ $content
 </html>
 """)
 
-NAV_ITEMS = ("queue", "add", "archive", "movies", "stats")
+NAV_ITEMS = ("queue", "notstarted", "add", "archive", "movies", "stats")
 
 
 def render_page(title: str, content: str, active_nav: str = "") -> str:
@@ -130,6 +131,7 @@ def make_handler(
         GET_ROUTES = [
             (re.compile(r"^/$"), "page_queue"),
             (re.compile(r"^/show/(\d+)$"), "page_show"),
+            (re.compile(r"^/not-started$"), "page_not_started"),
             (re.compile(r"^/archive$"), "page_archive"),
             (re.compile(r"^/add$"), "page_add"),
             (re.compile(r"^/movies$"), "page_movies"),
@@ -280,6 +282,34 @@ def make_handler(
   </div>
 </div>""")
             self.send_html(render_page("Queue", "\n".join(parts), active_nav="queue"))
+
+        def page_not_started(self):
+            rows = db.not_started(self.conn())
+            parts = [f"""\
+<h1>Not started</h1>
+<p class="muted">{len(rows)} shows you follow but haven't begun ·
+ sorted by their latest episode's release date</p>
+<p><input type="search" placeholder="Filter shows…"
+   oninput="filterCards(this.value)"></p>"""]
+            if not rows:
+                parts.append('<p class="muted">Nothing here — everything '
+                             'you follow is started or waiting.</p>')
+            for row in rows:
+                name = html.escape(row["name"])
+                ep_label = f"S{row['episode_season']:02d}E{row['episode_number']:02d}"
+                latest = row["latest_airdate"] or "no date"
+                parts.append(f"""\
+<div class="card">
+  <div class="grow">
+    <div class="title"><a href="/show/{row['id']}">{name}</a></div>
+    <div class="sub">latest episode {latest} · {row['aired_count']} aired
+     · start at {ep_label}</div>
+  </div>
+  <button class="primary" onclick="act('/api/episodes/{row['episode_id']}/watch')">✓</button>
+  <button onclick="act('/api/shows/{row['id']}/archive')">Archive</button>
+</div>""")
+            self.send_html(render_page("Not started", "\n".join(parts),
+                                       active_nav="notstarted"))
 
         def page_show(self, show_id: str):
             conn = self.conn()

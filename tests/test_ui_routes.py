@@ -82,14 +82,24 @@ def test_queue_sort_select_box(srv):
 
 def test_queue_page_shows_next_episode_and_waiting_section(srv):
     base, _, ids = srv
+    # Alpha & Sons has no watches yet -> it's on /not-started, not the queue
     page = get_html(base + "/")
-    assert "Alpha &amp; Sons" in page            # escaped show name
-    assert "S01E01" in page                       # earliest unwatched aired
-    assert "One &lt;b&gt;" in page                # escaped episode name
-    assert "+1 more" in page                      # e2 also aired
+    assert "Alpha &amp; Sons" not in page
     assert "Waiting for new episodes" in page
     assert "Waiting Show" in page
-    assert f"/api/episodes/{ids['e1']}/watch" in page
+
+    ns = get_html(base + "/not-started")
+    assert "Alpha &amp; Sons" in ns               # escaped show name
+    assert "start at S01E01" in ns                # earliest aired episode
+    assert "2 aired" in ns
+    assert f"/api/episodes/{ids['e1']}/watch" in ns
+
+    # one watch moves it from Not started into the queue
+    post(base + f"/api/episodes/{ids['e1']}/watch")
+    page = get_html(base + "/")
+    assert "Alpha &amp; Sons" in page
+    assert "S01E02" in page                       # next unwatched aired
+    assert "Alpha &amp; Sons" not in get_html(base + "/not-started")
 
 
 def test_show_page_groups_seasons_and_escapes(srv):
@@ -176,6 +186,7 @@ def test_watch_all_marks_everything_even_unaired(srv):
 
 def test_archive_removes_from_queue_unarchive_restores(srv):
     base, _, ids = srv
+    post(base + f"/api/episodes/{ids['e1']}/watch")  # started -> in queue
     post(base + f"/api/shows/{ids['show']}/archive")
     assert "Alpha &amp; Sons" not in get_html(base + "/")
     post(base + f"/api/shows/{ids['show']}/unarchive")

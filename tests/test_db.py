@@ -154,10 +154,15 @@ def test_queue_picks_earliest_unwatched_aired_episode(conn):
 
 
 def test_queue_sort_oldest_pending_airdate_first(conn):
+    # each show needs one watch to be "started" (else it's on Not started)
     s1 = add_show(conn, 1, "Newer Backlog")
-    add_ep(conn, s1, 100, 1, 1, airdate="2026-06-01")
+    add_ep(conn, s1, 99, 1, 1, airdate="2026-05-25",
+           watched_at="2026-06-01T00:00:00+00:00")
+    add_ep(conn, s1, 100, 1, 2, airdate="2026-06-01")
     s2 = add_show(conn, 2, "Older Backlog")
-    add_ep(conn, s2, 200, 1, 1, airdate="2024-01-01")
+    add_ep(conn, s2, 199, 1, 1, airdate="2023-12-25",
+           watched_at="2024-01-01T00:00:00+00:00")
+    add_ep(conn, s2, 200, 1, 2, airdate="2024-01-01")
     queue, _ = db.watch_next(conn, as_of=TODAY, sort="oldest")
     assert [r["name"] for r in queue] == ["Older Backlog", "Newer Backlog"]
     queue, _ = db.watch_next(conn, as_of=TODAY, sort="newest")
@@ -178,15 +183,19 @@ def test_queue_default_sort_recently_watched_first(conn):
     c = add_show(conn, 3, "Never Started")
     add_ep(conn, c, 300, 1, 1, airdate="2020-01-01")
     queue, _ = db.watch_next(conn, as_of=TODAY)  # default sort
+    # never-watched shows are NOT in the queue — they live on Not started
     assert [r["name"] for r in queue] == \
-        ["Watched Yesterday", "Watched Last Year", "Never Started"]
+        ["Watched Yesterday", "Watched Last Year"]
     assert queue[0]["last_watched_at"] == "2026-07-05T20:00:00+00:00"
-    assert queue[2]["last_watched_at"] is None
+    assert [r["name"] for r in db.not_started(conn, as_of=TODAY)] == \
+        ["Never Started"]
 
 
 def test_queue_unknown_sort_falls_back_to_recent(conn):
     a = add_show(conn, 1, "Show")
-    add_ep(conn, a, 100, 1, 1, airdate="2020-01-01")
+    add_ep(conn, a, 99, 1, 1, airdate="2020-01-01",
+           watched_at="2020-01-02T00:00:00+00:00")
+    add_ep(conn, a, 100, 1, 2, airdate="2020-01-08")
     queue, _ = db.watch_next(conn, as_of=TODAY, sort="drop table shows")
     assert len(queue) == 1  # silently falls back, never interpolates input
 
@@ -209,9 +218,16 @@ def test_queue_excludes_unaired_and_undated_episodes(conn):
 
 def test_queue_boundary_airdate_today_counts_as_aired(conn):
     sid = add_show(conn, 1, "Tonight")
-    add_ep(conn, sid, 100, 1, 1, airdate=TODAY)
+    add_ep(conn, sid, 99, 1, 1, airdate="2026-01-01",
+           watched_at="2026-01-02T00:00:00+00:00")
+    add_ep(conn, sid, 100, 1, 2, airdate=TODAY)
     queue, waiting = db.watch_next(conn, as_of=TODAY)
     assert len(queue) == 1 and not waiting
+    # boundary also holds for the not-started join
+    sid2 = add_show(conn, 2, "Tonight Fresh")
+    add_ep(conn, sid2, 200, 1, 1, airdate=TODAY)
+    assert [r["name"] for r in db.not_started(conn, as_of=TODAY)] == \
+        ["Tonight Fresh"]
 
 
 def test_queue_excludes_archived_and_fully_watched_shows(conn):
@@ -223,15 +239,37 @@ def test_queue_excludes_archived_and_fully_watched_shows(conn):
            watched_at="2026-01-02T00:00:00+00:00")
     queue, waiting = db.watch_next(conn, as_of=TODAY)
     assert not queue and not waiting
+    assert db.not_started(conn, as_of=TODAY) == []  # archived stays out
 
 
 def test_queue_earliest_by_season_number_not_airdate(conn):
     # Specials/reordered airdates: next-up follows (season, number) order.
     sid = add_show(conn, 1, "Show")
+    add_ep(conn, sid, 99, 1, 0, airdate="2025-12-01",
+           watched_at="2025-12-02T00:00:00+00:00")  # started
     add_ep(conn, sid, 100, 1, 1, airdate="2026-03-01")  # aired later but is S1E1
     add_ep(conn, sid, 101, 1, 2, airdate="2026-01-01")
     queue, _ = db.watch_next(conn, as_of=TODAY)
     assert (queue[0]["episode_season"], queue[0]["episode_number"]) == (1, 1)
+
+
+def test_not_started_sorted_by_latest_airdate_desc(conn):
+    a = add_show(conn, 1, "Old Finished Show")
+    add_ep(conn, a, 100, 1, 1, airdate="2010-01-01")
+    add_ep(conn, a, 101, 1, 2, airdate="2012-06-01")   # latest 2012
+    b = add_show(conn, 2, "Currently Airing")
+    add_ep(conn, b, 200, 1, 1, airdate="2026-06-01")
+    add_ep(conn, b, 201, 1, 2, airdate="2026-12-01")   # latest in the future
+    c = add_show(conn, 3, "No Dates At All")
+    add_ep(conn, c, 300, 1, 1, airdate=None)           # never aired -> excluded
+    d = add_show(conn, 4, "Mid Show")
+    add_ep(conn, d, 400, 1, 1, airdate="2020-05-05")   # latest 2020
+    rows = db.not_started(conn, as_of=TODAY)
+    assert [r["name"] for r in rows] == \
+        ["Currently Airing", "Mid Show", "Old Finished Show"]
+    assert rows[0]["latest_airdate"] == "2026-12-01"
+    assert rows[0]["aired_count"] == 1                 # future ep not aired yet
+    assert (rows[0]["episode_season"], rows[0]["episode_number"]) == (1, 1)
 
 
 # ---------------------------------------------------------------------------

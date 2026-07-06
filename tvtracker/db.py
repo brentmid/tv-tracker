@@ -357,11 +357,16 @@ def watch_next(
             LIMIT 1
         )
         WHERE s.status = 'active'
+          AND EXISTS (SELECT 1 FROM episodes ew
+                       WHERE ew.show_id = s.id AND ew.watched_at IS NOT NULL)
         ORDER BY {order_by}
         """,
         {"as_of": as_of},
     ).fetchall()
 
+    # waiting intentionally keeps ALL active shows (started or not): a
+    # never-watched show with only unaired episodes belongs here, not on
+    # the not-started list (which requires an aired episode to start on).
     waiting = conn.execute(
         """
         SELECT s.*,
@@ -385,6 +390,50 @@ def watch_next(
     ).fetchall()
 
     return queue, waiting
+
+
+def not_started(
+    conn: sqlite3.Connection, as_of: str | None = None
+) -> list[sqlite3.Row]:
+    """Active shows with aired episodes but no watches at all — the
+    "Not started" tab. Same card shape as the queue (next episode = the
+    earliest aired one, normally S01E01), plus latest_airdate = the airdate
+    of the show's latest scheduled episode (may be in the future for airing
+    shows). Sorted by that latest airdate, newest first; undated last.
+    """
+    as_of = as_of or today()
+    return conn.execute(
+        """
+        SELECT s.*,
+               e.id      AS episode_id,
+               e.season  AS episode_season,
+               e.number  AS episode_number,
+               e.name    AS episode_name,
+               e.airdate AS episode_airdate,
+               (SELECT COUNT(*) FROM episodes e2
+                 WHERE e2.show_id = s.id
+                   AND e2.airdate IS NOT NULL
+                   AND e2.airdate <= :as_of) AS aired_count,
+               (SELECT MAX(e4.airdate) FROM episodes e4
+                 WHERE e4.show_id = s.id) AS latest_airdate
+        FROM shows s
+        JOIN episodes e ON e.id = (
+            SELECT e3.id FROM episodes e3
+            WHERE e3.show_id = s.id
+              AND e3.airdate IS NOT NULL
+              AND e3.airdate <= :as_of
+            ORDER BY e3.season, e3.number
+            LIMIT 1
+        )
+        WHERE s.status = 'active'
+          AND NOT EXISTS (SELECT 1 FROM episodes ew
+                           WHERE ew.show_id = s.id
+                             AND ew.watched_at IS NOT NULL)
+        ORDER BY latest_airdate IS NULL, latest_airdate DESC,
+                 s.name COLLATE NOCASE
+        """,
+        {"as_of": as_of},
+    ).fetchall()
 
 
 # ---------------------------------------------------------------------------
