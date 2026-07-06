@@ -19,11 +19,13 @@ Env:
 """
 from __future__ import annotations
 
+import datetime
 import html
 import json
 import os
 import re
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from string import Template
@@ -96,6 +98,21 @@ def poster_img(url: str | None, placeholder: str = "📺") -> str:
     if not url:
         return f'<div class="poster ph">{placeholder}</div>'
     return f'<img class="poster" src="{html.escape(url)}" alt="" loading="lazy">'
+
+
+def refresh_all_running(conn) -> bool:
+    """True while a background refresh-all is in flight: started more
+    recently than the last finish, and recently enough that a server
+    restart mid-run (which orphans the started_at key) goes stale."""
+    started = db.get_meta(conn, "refresh_all_started_at")
+    if not started:
+        return False
+    finished = db.get_meta(conn, "last_refresh_all")
+    if finished and finished >= started:
+        return False
+    age = (datetime.datetime.now(datetime.timezone.utc)
+           - datetime.datetime.fromisoformat(started))
+    return age < datetime.timedelta(minutes=30)
 
 
 def sort_select(base_path: str, labels: list[tuple[str, str]], current: str) -> str:
@@ -265,12 +282,26 @@ def make_handler(
             sort = self.sort_param(db.QUEUE_SORTS, "recent")
             queue, waiting = db.watch_next(conn, sort=sort)
             last_refresh = db.get_meta(conn, "last_refresh_all")
-            last_txt = (f"air dates refreshed {html.escape(last_refresh[:16])}Z"
-                        if last_refresh else "air dates never refreshed")
+            if refresh_all_running(conn):
+                started = db.get_meta(conn, "refresh_all_started_at") or ""
+                status = (f"refreshing air dates now… (started "
+                          f"{html.escape(started[11:16])}Z, takes a few "
+                          f"minutes — reload to check)")
+            elif last_refresh:
+                errors = json.loads(
+                    db.get_meta(conn, "refresh_all_errors") or "[]")
+                err_txt = f" · {len(errors)} shows failed" if errors else ""
+                status = (f"air dates refreshed "
+                          f"{html.escape(last_refresh[:16])}Z{err_txt} ·"
+                          "\n  <button onclick=\"refreshBtn('/api/refresh-all',"
+                          " this)\">Refresh all</button>")
+            else:
+                status = ("air dates never refreshed ·\n  <button "
+                          "onclick=\"refreshBtn('/api/refresh-all', this)\">"
+                          "Refresh all</button>")
             parts = [f"""\
 <h1>Watch Next</h1>
-<p class="muted">{last_txt} ·
-  <button onclick="refreshBtn('/api/refresh-all', this)">Refresh all</button></p>
+<p class="muted">{status}</p>
 <p style="display:flex;gap:8px">
   {sort_select("/", self.QUEUE_SORT_LABELS, sort)}
   <input type="search" placeholder="Filter shows…"
@@ -790,22 +821,40 @@ def make_handler(
             self.send_json({"ok": True, **result})
 
         def api_refresh_all(self):
+            """Kick off a refresh of every active show in a background
+            thread and return immediately. Hundreds of shows take minutes
+            at TVmaze's rate limit — far longer than a browser request
+            should live. The queue banner reflects progress via meta keys:
+            refresh_all_started_at (set here) vs last_refresh_all (set by
+            the worker when done)."""
             conn = self.conn()
-            refreshed, errors = [], []
-            for show in db.list_shows(conn, "active"):
+            if refresh_all_running(conn):
+                self.send_json({"error": "a refresh is already running"}, 409)
+                return
+            shows = [(s["tvmaze_id"], s["name"])
+                     for s in db.list_shows(conn, "active")]
+            db.set_meta(conn, "refresh_all_started_at", db.utcnow())
+
+            def worker():
+                bg = db.connect(db_path)  # request conn dies with the request
                 try:
-                    result = sync_show_from_tvmaze(conn, show["tvmaze_id"])
-                except tvmaze.TVMazeError as e:
-                    errors.append({"show": show["name"], "error": str(e)})
-                    continue
-                if result is None:
-                    errors.append({"show": show["name"],
-                                   "error": "gone from TVmaze"})
-                    continue
-                refreshed.append(show["name"])
-            db.set_meta(conn, "last_refresh_all", db.utcnow())
-            self.send_json({"ok": not errors, "refreshed": len(refreshed),
-                            "errors": errors})
+                    errors = []
+                    for tvmaze_id, name in shows:
+                        try:
+                            if sync_show_from_tvmaze(bg, tvmaze_id) is None:
+                                errors.append(f"{name}: gone from TVmaze")
+                        except tvmaze.TVMazeError as e:
+                            errors.append(f"{name}: {e}")
+                        except Exception as e:  # noqa: BLE001 — keep going
+                            errors.append(f"{name}: {e!r}")
+                    db.set_meta(bg, "refresh_all_errors", json.dumps(errors))
+                    db.set_meta(bg, "last_refresh_all", db.utcnow())
+                finally:
+                    bg.close()
+
+            threading.Thread(target=worker, daemon=True,
+                             name="refresh-all").start()
+            self.send_json({"ok": True, "started": True, "shows": len(shows)})
 
         def api_episode_watch(self, episode_id: str, action: str):
             conn = self.conn()

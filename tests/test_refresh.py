@@ -84,6 +84,37 @@ def get_html(url):
         return res.read().decode()
 
 
+def wait_until(predicate, timeout=5.0):
+    """Poll for an async refresh-all worker to finish."""
+    import time
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def refresh_all_done(db_path):
+    def check():
+        conn = db.connect(db_path)
+        try:
+            return db.get_meta(conn, "last_refresh_all") is not None
+        finally:
+            conn.close()
+    return check
+
+
+def episode_exists(db_path, show_id, season, number):
+    def check():
+        conn = db.connect(db_path)
+        try:
+            return db.find_episode(conn, show_id, season, number) is not None
+        finally:
+            conn.close()
+    return check
+
+
 def add_and_watch_first(base, db_path):
     """Add the show and mark S01E01 watched; returns (show_row_id, ep_id)."""
     _, payload = post(base + "/api/shows", {"tvmaze_id": 82})
@@ -139,23 +170,36 @@ def test_refresh_all_skips_archived_and_sets_meta(srv):
 
     code, payload = post(base + "/api/refresh-all")
     assert code == 200
-    assert payload["ok"] is True
-    assert payload["refreshed"] == 0        # only show is archived -> skipped
-    assert payload["errors"] == []
+    assert payload == {"ok": True, "started": True, "shows": 0}  # all archived
+    assert wait_until(refresh_all_done(db_path))
 
     conn = db.connect(db_path)
-    assert db.get_meta(conn, "last_refresh_all") is not None
     assert db.find_episode(conn, show_id, 2, 2) is None  # still frozen
     conn.close()
 
     post(base + f"/api/shows/{show_id}/unarchive")
     _, payload = post(base + "/api/refresh-all")
-    assert payload["refreshed"] == 1
+    assert payload["shows"] == 1
+    # wait on the actual work product (meta timestamps have second
+    # granularity, so back-to-back runs can't be told apart by them)
+    assert wait_until(episode_exists(db_path, show_id, 2, 2))
     conn = db.connect(db_path)
-    assert db.find_episode(conn, show_id, 2, 2) is not None
     assert (db.get_episode(conn, watched_ep)["watched_at"]
             == "2020-05-05T00:00:00+00:00")
     conn.close()
+
+
+def test_refresh_all_second_start_while_running_409s(srv, monkeypatch):
+    base, db_path = srv
+    conn = db.connect(db_path)
+    db.set_meta(conn, "refresh_all_started_at", db.utcnow())  # fake in-flight
+    conn.close()
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        post(base + "/api/refresh-all")
+    assert exc.value.code == 409
+    page = get_html(base + "/")
+    assert "refreshing air dates now" in page
+    assert "/api/refresh-all" not in page   # button hidden while running
 
 
 def test_refresh_unknown_show_404(srv):
@@ -166,11 +210,12 @@ def test_refresh_unknown_show_404(srv):
 
 
 def test_queue_page_shows_refresh_all_button(srv):
-    base, _ = srv
+    base, db_path = srv
     page = get_html(base + "/")
     assert "/api/refresh-all" in page
     assert "air dates never refreshed" in page
     post(base + "/api/refresh-all")
+    assert wait_until(refresh_all_done(db_path))
     assert "air dates refreshed 20" in get_html(base + "/")
 
 
