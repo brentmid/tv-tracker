@@ -137,6 +137,30 @@ def test_import_page_lists_unresolved(srv):
     assert "Movies (1)" in page and "Mystery Flick" in page
 
 
+def test_import_tab_shows_count_everywhere_until_resolved(srv):
+    base, db_path = srv
+    # 2 unresolved shows + 1 unresolved movie group = 3
+    for path in ("/", "/movies", "/stats"):
+        page = get_html(base + path)
+        assert 'href="/import"' in page
+        assert "Import (3)" in page
+    assert '<a href="/import" class="active">' in get_html(base + "/import")
+
+    # resolve/skip everything -> tab disappears from the chrome
+    post(base + "/api/import/resolve",
+         {"staging_id": staging_id_for(db_path, "Old Gone Show", "show"),
+          "tvmaze_id": 555000})
+    post(base + "/api/import/resolve",
+         {"staging_id": staging_id_for(db_path, "Twin Detectives", "show"),
+          "skip": True})
+    assert "Import (1)" in get_html(base + "/")   # movie group still pending
+    post(base + "/api/import/resolve",
+         {"staging_id": staging_id_for(db_path, "Mystery Flick", "movie"),
+          "tmdb_id": 424242})
+    page = get_html(base + "/")
+    assert 'href="/import"' not in page
+
+
 def test_resolve_show_applies_watches_and_status(srv):
     base, db_path = srv
     sid = staging_id_for(db_path, "Old Gone Show", "show")

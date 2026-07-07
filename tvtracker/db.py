@@ -751,6 +751,23 @@ def staging_rows_by_note(
     ).fetchall()
 
 
+def unresolved_import_count(conn: sqlite3.Connection) -> int:
+    """How many decisions the /import page is waiting on: unresolved
+    show rows plus unresolved movie groups. Episode rows are excluded —
+    numbering mismatches stay unmatched forever by design and aren't
+    user-resolvable there."""
+    return conn.execute(
+        """
+        SELECT (SELECT COUNT(*) FROM import_staging
+                 WHERE kind = 'show'
+                   AND match_status IN ('ambiguous', 'unmatched'))
+             + (SELECT COUNT(DISTINCT note) FROM import_staging
+                 WHERE kind = 'movie'
+                   AND match_status IN ('ambiguous', 'unmatched'))
+        """
+    ).fetchone()[0]
+
+
 def set_staging_status_by_note(
     conn: sqlite3.Connection,
     note: str,
