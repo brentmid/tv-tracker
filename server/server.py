@@ -73,6 +73,7 @@ PAGE_TEMPLATE = Template("""\
   <a href="/archive" class="$nav_archive">Archive</a>
   <a href="/movies" class="$nav_movies">Movies</a>
   <a href="/stats" class="$nav_stats">Stats</a>
+  $import_tab
 </nav>
 <main>
 $content
@@ -125,15 +126,22 @@ def sort_select(base_path: str, labels: list[tuple[str, str]], current: str) -> 
             f"{options}</select>")
 
 
-def render_page(title: str, content: str, active_nav: str = "") -> str:
+def render_page(title: str, content: str, active_nav: str = "",
+                import_count: int = 0) -> str:
     """Wrap page content in the base chrome (nav, footer, dark theme).
 
     `title` is plain text (escaped here); `content` is trusted HTML built
     by the page methods, which escape user/API data as they build it.
+    The Import tab only exists while there's something to resolve.
     """
     subs = {f"nav_{item}": "active" if item == active_nav else "" for item in NAV_ITEMS}
+    import_tab = ""
+    if import_count:
+        active = "active" if active_nav == "import" else ""
+        import_tab = (f'<a href="/import" class="{active}">'
+                      f"Import ({import_count})</a>")
     return PAGE_TEMPLATE.substitute(
-        title=html.escape(title), content=content, **subs
+        title=html.escape(title), content=content, import_tab=import_tab, **subs
     )
 
 
@@ -244,6 +252,12 @@ def make_handler(
                 return {}
             return json.loads(self.rfile.read(length))
 
+        def send_page(self, title: str, content: str, active_nav: str = ""):
+            """render_page + the conditional Import nav tab (needs the DB)."""
+            count = db.unresolved_import_count(self.conn())
+            self.send_html(render_page(title, content, active_nav=active_nav,
+                                       import_count=count))
+
         def send_html(self, html: str, code: int = 200):
             body = html.encode("utf-8")
             self.send_response(code)
@@ -345,7 +359,7 @@ def make_handler(
     <div class="sub">{next_txt}</div>
   </div>
 </div>""")
-            self.send_html(render_page("Queue", "\n".join(parts), active_nav="queue"))
+            self.send_page("Queue", "\n".join(parts), active_nav="queue")
 
         NOT_STARTED_SORT_LABELS = [
             ("latest", "Latest episode"),
@@ -381,8 +395,8 @@ def make_handler(
   <button class="primary" onclick="act('/api/episodes/{row['episode_id']}/watch')">✓</button>
   <button onclick="act('/api/shows/{row['id']}/archive')">Archive</button>
 </div>""")
-            self.send_html(render_page("Not started", "\n".join(parts),
-                                       active_nav="notstarted"))
+            self.send_page("Not started", "\n".join(parts),
+                           active_nav="notstarted")
 
         def page_show(self, show_id: str):
             conn = self.conn()
@@ -434,7 +448,7 @@ def make_handler(
   </div>
   {btn}
 </div>""")
-            self.send_html(render_page(show["name"], "\n".join(parts)))
+            self.send_page(show["name"], "\n".join(parts))
 
         def page_finished(self):
             rows = db.finished(self.conn())
@@ -457,8 +471,8 @@ def make_handler(
     <div class="sub">{row["episode_count"]} episodes · finished {finished_on}</div>
   </div>
 </div>""")
-            self.send_html(render_page("Finished", "\n".join(parts),
-                                       active_nav="finished"))
+            self.send_page("Finished", "\n".join(parts),
+                           active_nav="finished")
 
         ARCHIVE_SORT_LABELS = [
             ("pct", "Highest %"),
@@ -491,7 +505,7 @@ def make_handler(
   </div>
   <button onclick="act('/api/shows/{show['id']}/unarchive')">Unarchive</button>
 </div>""")
-            self.send_html(render_page("Archive", "\n".join(parts), active_nav="archive"))
+            self.send_page("Archive", "\n".join(parts), active_nav="archive")
 
         def page_add(self):
             content = """\
@@ -499,7 +513,7 @@ def make_handler(
 <p><input type="search" id="q" placeholder="Search TVmaze…" autofocus
    onkeydown="if(event.key==='Enter')searchShows()"></p>
 <div id="results"></div>"""
-            self.send_html(render_page("Add", content, active_nav="add"))
+            self.send_page("Add", content, active_nav="add")
 
         def api_search_shows(self):
             query = (self.query.get("q") or [""])[0].strip()
@@ -577,7 +591,7 @@ def make_handler(
                 parts.append(movie_card(m, f"""\
   <button onclick="act('/api/movies/{m['id']}/unwatch')" title="back to watchlist">↩</button>"""))
 
-            self.send_html(render_page("Movies", "\n".join(parts), active_nav="movies"))
+            self.send_page("Movies", "\n".join(parts), active_nav="movies")
 
         def page_stats(self):
             data = stats.compute_stats(self.conn())
@@ -623,7 +637,7 @@ def make_handler(
    · {entry["movies"]} movies</div>
 </div></div>""")
 
-            self.send_html(render_page("Stats", "\n".join(parts), active_nav="stats"))
+            self.send_page("Stats", "\n".join(parts), active_nav="stats")
 
         def page_import(self):
             conn = self.conn()
@@ -662,7 +676,7 @@ def make_handler(
   <button onclick="importSearch({row['id']}, 'movie', this)">Find</button>
   <button onclick="resolveImport({row['id']}, {{skip: true}}, this)">Skip</button>
 </div>""")
-            self.send_html(render_page("Import", "\n".join(parts)))
+            self.send_page("Import", "\n".join(parts), active_nav="import")
 
         def api_import_resolve(self):
             body = self.read_json_body()
