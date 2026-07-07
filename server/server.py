@@ -95,10 +95,12 @@ NAV_ITEMS = ("queue", "notstarted", "finished", "add", "archive", "movies", "sta
 def poster_img(url: str | None, placeholder: str = "📺") -> str:
     """Poster thumbnail for a card. Images come straight from the TVmaze/
     TMDB CDNs cached at add/import time — zero API calls; lazy-loaded so
-    long lists only fetch what scrolls into view."""
+    long lists only fetch what scrolls into view. Click opens the
+    full-resolution artwork in a lightbox (see openLightbox in app.js)."""
     if not url:
         return f'<div class="poster ph">{placeholder}</div>'
-    return f'<img class="poster" src="{html.escape(url)}" alt="" loading="lazy">'
+    return (f'<img class="poster" src="{html.escape(url)}" alt="" '
+            f'loading="lazy" onclick="openLightbox(this)">')
 
 
 def refresh_all_running(conn) -> bool:

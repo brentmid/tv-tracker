@@ -77,6 +77,28 @@ def test_assets_served_with_content_type(srv):
     assert ctype == "application/javascript; charset=utf-8"
 
 
+def test_poster_lightbox_wiring(srv):
+    base, db_path = srv
+    conn = db.connect(db_path)
+    db.upsert_show(conn, tvmaze_id=1, name="Show",
+                   image_url="https://static.tvmaze.com/uploads/images/"
+                             "medium_portrait/1/1.jpg")
+    eid = db.upsert_episode(conn, show_id=1, tvmaze_episode_id=10,
+                            season=1, number=1, airdate="2020-01-01")
+    db.set_episode_watched(conn, eid, True)
+    db.upsert_episode(conn, show_id=1, tvmaze_episode_id=11,
+                      season=1, number=2, airdate="2020-01-08")
+    conn.close()
+    _, _, body = get(base + "/")
+    page = body.decode()
+    assert 'onclick="openLightbox(this)"' in page   # posters are clickable
+    _, _, js = get(base + "/assets/app.js")
+    js = js.decode()
+    assert "function openLightbox" in js
+    assert "original_untouched" in js and "/original/" in js  # full-res URLs
+    assert "Escape" in js                            # keyboard close
+
+
 def test_home_screen_app_assets(srv):
     base, _ = srv
     code, ctype, body = get(base + "/assets/apple-touch-icon.png")

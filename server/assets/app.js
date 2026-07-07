@@ -61,7 +61,7 @@ async function searchShows() {
     }
     box.innerHTML = data.results.map(s => `
 <div class="card">
-  ${s.image_url ? `<img src="${esc(s.image_url)}" alt="" width="48" style="border-radius:6px">` : ""}
+  ${s.image_url ? `<img class="poster" src="${esc(s.image_url)}" alt="" onclick="openLightbox(this)">` : ""}
   <div class="grow">
     <div class="title">${esc(s.name)}</div>
     <div class="sub">${esc(s.premiered || "date unknown")} · ${esc(s.tvmaze_status || "")}</div>
@@ -99,7 +99,7 @@ async function searchMovies() {
     }
     box.innerHTML = data.results.map(m => `
 <div class="card">
-  ${m.poster_url ? `<img src="${esc(m.poster_url)}" alt="" width="48" style="border-radius:6px">` : ""}
+  ${m.poster_url ? `<img class="poster" src="${esc(m.poster_url)}" alt="" onclick="openLightbox(this)">` : ""}
   <div class="grow">
     <div class="title">${esc(m.title)}${m.year ? ` (${m.year})` : ""}</div>
   </div>
@@ -114,6 +114,42 @@ async function addMovie(tmdbId, btn) {
     btn.textContent = "Adding…";
     await post("/api/movies", { tmdb_id: tmdbId });
     location.reload();
+}
+
+// -- poster lightbox ---------------------------------------------------------
+//
+// Full resolution comes from the CDNs at a URL derived from the cached
+// thumbnail — TVmaze medium_portrait -> original_untouched, TMDB /w342/ ->
+// /original/ — so this costs zero API calls. Falls back to the thumbnail
+// if the derived URL doesn't exist.
+
+function fullResUrl(src) {
+    return src
+        .replace("medium_portrait", "original_untouched")
+        .replace("/w342/", "/original/");
+}
+
+function openLightbox(thumb) {
+    const overlay = document.createElement("div");
+    overlay.className = "lightbox";
+    const img = document.createElement("img");
+    img.src = fullResUrl(thumb.src);
+    img.alt = "";
+    img.onerror = () => { img.onerror = null; img.src = thumb.src; };
+    const close = document.createElement("button");
+    close.className = "lightbox-close";
+    close.textContent = "✕";
+    close.setAttribute("aria-label", "Close");
+    const dismiss = () => {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey);
+    };
+    const onKey = (e) => { if (e.key === "Escape") dismiss(); };
+    overlay.onclick = (e) => { if (e.target !== img) dismiss(); };
+    close.onclick = dismiss;
+    document.addEventListener("keydown", onKey);
+    overlay.append(img, close);
+    document.body.append(overlay);
 }
 
 // Client-side filter for long card lists (queue, movies). Hides cards whose
